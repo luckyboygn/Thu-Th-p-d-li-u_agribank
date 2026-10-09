@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { triggerCloudSync } from '@/lib/cloud-sync';
 
 export async function POST(req: NextRequest) {
   const session = getSessionFromRequest(req);
@@ -96,6 +97,9 @@ export async function POST(req: NextRequest) {
         reason: trimmedReason,
         link: type === 'EXAM_UPLOAD' ? '/unit' : '/unit/training-demand'
       });
+
+      // Tự động đồng bộ bản ghi mới lên Cloud Storage
+      triggerCloudSync().catch(() => {});
 
       return NextResponse.json({
         success: true,

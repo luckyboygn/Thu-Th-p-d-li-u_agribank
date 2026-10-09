@@ -3,6 +3,7 @@ import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { isWindowOpen } from '@/lib/deadline';
+import { triggerCloudSync } from '@/lib/cloud-sync';
 
 // 1. GET: Lấy thông tin hồ sơ khảo sát của đơn vị (bao gồm cả Programs và Positions nếu có)
 export async function GET(req: NextRequest) {
@@ -296,6 +297,9 @@ export async function POST(req: NextRequest) {
         action: 'SUBMIT_OFFICIAL_TRAINING_DEMAND',
         details: { submissionId: submission.id, collectionId, receiptCode }
       });
+
+      // Tự động đồng bộ bản ghi mới lên Cloud Storage
+      triggerCloudSync().catch(() => {});
 
       return NextResponse.json({
         success: true,

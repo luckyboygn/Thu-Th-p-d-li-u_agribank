@@ -3,6 +3,7 @@ import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { isWindowOpen } from '@/lib/deadline';
+import { triggerCloudSync } from '@/lib/cloud-sync';
 
 export async function POST(req: NextRequest) {
   const session = getSessionFromRequest(req);
@@ -125,6 +126,9 @@ export async function POST(req: NextRequest) {
         details: { uploadId, version: upload.version, totalRows: upload.total_rows, receiptCode },
         ipAddress: req.headers.get('x-forwarded-for') || req.headers.get('host')
       });
+
+      // Tự động đồng bộ bản ghi mới lên Cloud Storage
+      triggerCloudSync().catch(() => {});
 
       return NextResponse.json({
         success: true,

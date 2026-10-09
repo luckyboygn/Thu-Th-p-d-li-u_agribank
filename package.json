@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/sync_db_from_cloud.js && next start",
+    "db:sync-cloud": "node scripts/sync_db_from_cloud.js",
     "test:validation": "node scripts/test_validation_engine.js",
     "test:security0": "npx tsx scripts/test_security_part0.ts",
     "test:deadlines": "npx tsx scripts/test_deadlines_suite.ts",
@@ -36,6 +37,7 @@
     "db:clean-demo": "node scripts/cleanup_demo_data.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1148.0",
     "bcryptjs": "^3.0.3",
     "docx": "^9.8.1",
     "jsonwebtoken": "^9.0.2",
