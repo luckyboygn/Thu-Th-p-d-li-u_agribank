@@ -8,7 +8,9 @@ services:
     startCommand: npm start
     envVars:
       - key: NODE_VERSION
-        value: 22.12.0
+        value: "22"
+      - key: NODE_OPTIONS
+        value: "--experimental-sqlite"
       - key: NODE_ENV
         value: production
       - key: JWT_SECRET
