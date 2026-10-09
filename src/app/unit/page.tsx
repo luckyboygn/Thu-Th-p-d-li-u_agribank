@@ -70,6 +70,7 @@ interface UnitDashboardData {
   uploadHistory: any[];
   deadlineExtension?: { new_end_at: string; reason: string } | null;
   reopenInfo?: { reason: string; reopened_at: string; reopened_by_name?: string } | null;
+  activeCampaignTask?: string;
 }
 
 function UnitDashboardContent() {
@@ -154,6 +155,23 @@ function UnitDashboardContent() {
   const [networkSearch, setNetworkSearch] = useState('');
   const [networkStatusFilter, setNetworkStatusFilter] = useState<'ALL' | 'SUBMITTED' | 'DRAFT' | 'ERROR' | 'NOT_YET'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'CANDIDATE_LIST' | 'TRAINING_DEMAND'>('ALL');
+
+  // Xác định nhiệm vụ đợt này từ Admin (CANDIDATE_EXAM, TRAINING_DEMAND, BOTH)
+  const activeTaskMode = useMemo<'CANDIDATE_EXAM' | 'TRAINING_DEMAND' | 'BOTH'>(() => {
+    const rawMode = data?.activeCampaignTask || 'AUTO';
+    if (rawMode === 'CANDIDATE_EXAM') return 'CANDIDATE_EXAM';
+    if (rawMode === 'TRAINING_DEMAND') return 'TRAINING_DEMAND';
+    if (rawMode === 'BOTH') return 'BOTH';
+
+    // Chế độ AUTO: Tự động theo trạng thái đợt đang mở
+    const isExamOpen = data?.exam && data.exam.status === 'OPEN';
+    const isTrainingOpen = trainingData?.collection && trainingData.collection.status === 'OPEN';
+
+    if (isExamOpen && !isTrainingOpen) return 'CANDIDATE_EXAM';
+    if (!isExamOpen && isTrainingOpen) return 'TRAINING_DEMAND';
+    if (isExamOpen && isTrainingOpen) return 'BOTH';
+    return isExamOpen ? 'CANDIDATE_EXAM' : 'CANDIDATE_EXAM';
+  }, [data?.activeCampaignTask, data?.exam, trainingData?.collection]);
 
   const loadData = async (examId?: number, catFilter = categoryFilter) => {
     try {
@@ -598,243 +616,598 @@ function UnitDashboardContent() {
       {/* ========================================================================= */}
       {activeTab === 'TASKS' && (
         <div className="space-y-6">
-          {/* Header Tiêu đề Việc cần làm */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#005F3E] flex items-center justify-center font-bold">
-                <Home className="w-5 h-5" />
+          {/* 1. Header Bảng Điều Khiển Nhiệm Vụ Đợt Này */}
+          <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-[#005F3E] text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+                {activeTaskMode === 'TRAINING_DEMAND' ? <GraduationCap className="w-6 h-6" /> : <FileSpreadsheet className="w-6 h-6" />}
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  Việc Cần Làm Của Đơn Vị
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Theo dõi trạng thái hoàn thành nghĩa vụ nộp danh sách thi nghiệp vụ và khảo sát nhu cầu đào tạo năm 2026.
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                    Bảng Điều Khiển Nhiệm Vụ Đợt Này
+                  </h3>
+                  <span className="px-3 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-100 text-[#005F3E] border border-emerald-300">
+                    {activeTaskMode === 'CANDIDATE_EXAM' ? 'Kỳ Thi Nghiệp Vụ / Kê Khai Nhân Sự' : activeTaskMode === 'TRAINING_DEMAND' ? 'Khảo Sát Nhu Cầu Đào Tạo' : 'Cả 2 Nhiệm Vụ Đồng Thời'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {activeTaskMode === 'CANDIDATE_EXAM'
+                    ? `Nhiệm vụ trọng tâm hiện tại: Kê khai và đối chiếu danh sách cán bộ tham gia "${data?.exam?.title || 'Kỳ thi nghiệp vụ'}" (${data?.exam?.code || 'BC_NS_Q4_2026'}).`
+                    : activeTaskMode === 'TRAINING_DEMAND'
+                    ? `Nhiệm vụ trọng tâm hiện tại: Kê khai chỉ tiêu học viên tham gia "${trainingData?.collection?.title || 'Khảo sát Nhu cầu Đào tạo năm 2026'}".`
+                    : 'Nhiệm vụ đợt này: Kê khai danh sách thi nghiệp vụ và Khảo sát nhu cầu đào tạo.'}
                 </p>
               </div>
             </div>
+
+            <div className="flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Đang Mở Tiếp Nhận Dữ Liệu</span>
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* THẺ 1: TIẾN ĐỘ THI NGHIỆP VỤ */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold">
-                      <FileSpreadsheet className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">Danh sách Cán bộ thi nghiệp vụ</h3>
-                      <p className="text-[11px] text-slate-500">{data?.exam?.title || 'Kỳ thi đang diễn ra'}</p>
-                    </div>
-                  </div>
-                  {/* Status Badge */}
-                  {!latest ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                      Chưa nộp file
-                    </span>
-                  ) : isOfficial ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      Đã gửi chính thức
-                    </span>
-                  ) : hasErrors ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-[#A81D22] border border-rose-300 flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                      Còn {latest.error_rows} lỗi
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                      Hợp lệ - Chờ gửi
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-5 space-y-3">
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="text-[11px] text-slate-500 font-medium">Phiên bản</div>
-                      <div className="text-base font-bold text-slate-800 mt-0.5">
-                        {latest ? `v${latest.version}` : '-'}
+          {/* 2. KHỐI NHIỆM VỤ ĐƠN VỊ CẦN THỰC HIỆN */}
+          <div className={activeTaskMode === 'BOTH' ? 'grid grid-cols-1 md:grid-cols-2 gap-6' : 'space-y-6'}>
+            {/* THẺ NHIỆM VỤ: THI NGHIỆP VỤ (Hiện khi mode là CANDIDATE_EXAM hoặc BOTH) */}
+            {(activeTaskMode === 'CANDIDATE_EXAM' || activeTaskMode === 'BOTH') && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center font-bold">
+                        <FileSpreadsheet className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-bold text-slate-900">
+                          Kê khai Danh sách Thi nghiệp vụ
+                        </h3>
+                        <p className="text-[11px] text-slate-500">{data?.exam?.title || 'Kỳ thi đang diễn ra'}</p>
                       </div>
                     </div>
-                    <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
-                      <div className="text-[11px] text-emerald-700 font-medium">Hợp lệ</div>
-                      <div className="text-base font-bold text-emerald-700 mt-0.5">
-                        {latest?.valid_rows || 0}
-                      </div>
-                    </div>
-                    <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-100">
-                      <div className="text-[11px] text-rose-700 font-medium">Số lỗi</div>
-                      <div className="text-base font-bold text-rose-700 mt-0.5">
-                        {latest?.error_rows || 0}
-                      </div>
-                    </div>
+                    {/* Status Badge */}
+                    {!latest ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        Chưa nộp file
+                      </span>
+                    ) : isOfficial ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        Đã gửi chính thức
+                      </span>
+                    ) : hasErrors ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-[#A81D22] border border-rose-300 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                        Còn {latest.error_rows} lỗi
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                        Hợp lệ - Chờ gửi
+                      </span>
+                    )}
                   </div>
 
-                  {latest && (
-                    <div className="text-xs text-slate-500 space-y-1 pt-2">
-                      <p>
-                        <span className="font-semibold text-slate-700">File gần nhất:</span> {latest.file_name}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-700">Thời gian cập nhật:</span>{' '}
-                        {new Date(latest.created_at).toLocaleString('vi-VN')}
-                      </p>
+                  <div className="mt-5 space-y-3">
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="text-[11px] text-slate-500 font-medium">Phiên bản</div>
+                        <div className="text-base font-bold text-slate-800 mt-0.5">
+                          {latest ? `v${latest.version}` : '-'}
+                        </div>
+                      </div>
+                      <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
+                        <div className="text-[11px] text-emerald-700 font-medium">Hợp lệ</div>
+                        <div className="text-base font-bold text-emerald-700 mt-0.5">
+                          {latest?.valid_rows || 0}
+                        </div>
+                      </div>
+                      <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-100">
+                        <div className="text-[11px] text-rose-700 font-medium">Số lỗi</div>
+                        <div className="text-base font-bold text-rose-700 mt-0.5">
+                          {latest?.error_rows || 0}
+                        </div>
+                      </div>
                     </div>
-                  )}
 
-                  {!latest && (
-                    <p className="text-xs text-slate-500 italic py-2">
-                      Đơn vị chưa nạp file danh sách thí sinh dự thi. Vui lòng tải file mẫu Excel và nộp danh sách để hệ thống tiến hành đối chiếu.
-                    </p>
-                  )}
+                    {latest && (
+                      <div className="text-xs text-slate-500 space-y-1 pt-2">
+                        <p>
+                          <span className="font-semibold text-slate-700">File gần nhất:</span> {latest.file_name}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-700">Thời gian cập nhật:</span>{' '}
+                          {new Date(latest.created_at).toLocaleString('vi-VN')}
+                        </p>
+                      </div>
+                    )}
+
+                    {!latest && (
+                      <p className="text-xs text-slate-500 italic py-2">
+                        Đơn vị chưa nạp file danh sách thí sinh dự thi. Vui lòng tải file mẫu Excel và nộp danh sách để hệ thống tiến hành đối chiếu 2 chiều.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <a
-                  href="/api/export?type=template"
-                  className="text-xs font-semibold text-amber-700 hover:text-amber-800 inline-flex items-center gap-1"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Tải file Excel mẫu</span>
-                </a>
-
-                <div className="flex items-center gap-2">
-                  {isOfficial && (
-                    <Link
-                      href={latest?.receipt_code ? `/unit/receipt?code=${latest.receipt_code}` : `/unit/receipt?type=EXAM_UPLOAD&id=${latest?.id}`}
-                      target="_blank"
-                      className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#005F3E] border border-emerald-300 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1"
-                      title="Mở hoặc in Tờ biên nhận điện tử"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>Biên nhận</span>
-                    </Link>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('CANDIDATES');
-                      setCandidatesSubTab('ERRORS');
-                    }}
-                    className="px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
+                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-3">
+                  <a
+                    href="/api/export?type=template"
+                    className="text-xs font-semibold text-amber-700 hover:text-amber-800 inline-flex items-center gap-1"
                   >
-                    <span>{isOfficial ? 'Xem danh sách đã gửi' : hasErrors ? 'Khắc phục lỗi ngay' : 'Đến trang nộp file'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Tải file Excel mẫu</span>
+                  </a>
+
+                  <div className="flex items-center gap-2">
+                    {isOfficial && (
+                      <Link
+                        href={latest?.receipt_code ? `/unit/receipt?code=${latest.receipt_code}` : `/unit/receipt?type=EXAM_UPLOAD&id=${latest?.id}`}
+                        target="_blank"
+                        className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#005F3E] border border-emerald-300 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1"
+                        title="Mở hoặc in Tờ biên nhận điện tử"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Biên nhận</span>
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('CANDIDATES');
+                        setCandidatesSubTab('ERRORS');
+                        router.push('/unit?tab=CANDIDATES');
+                      }}
+                      className="px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
+                    >
+                      <span>{isOfficial ? 'Xem danh sách đã gửi' : hasErrors ? 'Khắc phục lỗi ngay' : 'Đến trang nộp file'}</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* THẺ 2: TIẾN ĐỘ KHẢO SÁT NHU CẦU ĐÀO TẠO */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-800 flex items-center justify-center font-bold">
-                      <GraduationCap className="w-5 h-5" />
+            {/* THẺ NHIỆM VỤ: KHẢO SÁT ĐÀO TẠO (Hiện khi mode là TRAINING_DEMAND hoặc BOTH) */}
+            {(activeTaskMode === 'TRAINING_DEMAND' || activeTaskMode === 'BOTH') && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-800 flex items-center justify-center font-bold">
+                        <GraduationCap className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-bold text-slate-900">
+                          Khảo sát Nhu cầu Đào tạo
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          {trainingData?.collection?.title || 'Đợt khảo sát nhu cầu đào tạo năm 2026'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">Khảo sát Nhu cầu Đào tạo</h3>
-                      <p className="text-[11px] text-slate-500">
-                        {trainingData?.collection?.title || 'Đợt khảo sát nhu cầu đào tạo'}
-                      </p>
-                    </div>
+                    {/* Status Badge */}
+                    {trainingData?.submission?.status === 'SUBMITTED' ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        Đã gửi chính thức
+                      </span>
+                    ) : trainingData?.submission?.status === 'REOPENED' ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1">
+                        <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                        Mở lại để sửa
+                      </span>
+                    ) : trainingData?.submission?.status === 'DRAFT' ? (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        Đang soạn thảo
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        Chưa kê khai
+                      </span>
+                    )}
                   </div>
-                  {/* Status Badge */}
-                  {trainingData?.submission?.status === 'SUBMITTED' ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      Đã gửi chính thức
-                    </span>
-                  ) : trainingData?.submission?.status === 'REOPENED' ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1">
-                      <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
-                      Mở lại để sửa
-                    </span>
-                  ) : trainingData?.submission?.status === 'DRAFT' ? (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-amber-600" />
-                      Đang soạn thảo
-                    </span>
-                  ) : (
-                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                      Chưa kê khai
-                    </span>
-                  )}
+
+                  <div className="mt-5 space-y-3">
+                    <div className="grid grid-cols-2 gap-3 text-center">
+                      <div className="p-3 bg-teal-50/60 rounded-xl border border-teal-100">
+                        <div className="text-[11px] text-teal-700 font-medium">Chương trình đã chọn</div>
+                        <div className="text-base font-bold text-teal-800 mt-0.5">
+                          {trainingData?.summary?.programCount || trainingData?.declaredPrograms?.length || 0}
+                        </div>
+                      </div>
+                      <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
+                        <div className="text-[11px] text-emerald-700 font-medium">Tổng số người đăng ký</div>
+                        <div className="text-base font-bold text-emerald-800 mt-0.5">
+                          {trainingData?.summary?.totalParticipants || 0}
+                        </div>
+                      </div>
+                    </div>
+
+                    {trainingData?.submission ? (
+                      <div className="text-xs text-slate-500 space-y-1 pt-2">
+                        <p>
+                          <span className="font-semibold text-slate-700">Mã đợt:</span>{' '}
+                          {trainingData?.collection?.code || 'KS_2026'}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-700">Cập nhật lúc:</span>{' '}
+                          {new Date(trainingData.submission.updated_at).toLocaleString('vi-VN')}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500 italic py-2">
+                        Đơn vị chưa tiến hành đăng ký nhu cầu đào tạo. Hãy vào trang kê khai để chọn các chuyên đề trong khung và ngoài khung cần đào tạo năm 2026.
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                <div className="mt-5 space-y-3">
-                  <div className="grid grid-cols-2 gap-3 text-center">
-                    <div className="p-3 bg-teal-50/60 rounded-xl border border-teal-100">
-                      <div className="text-[11px] text-teal-700 font-medium">Chương trình đã chọn</div>
-                      <div className="text-base font-bold text-teal-800 mt-0.5">
-                        {trainingData?.summary?.programCount || trainingData?.declaredPrograms?.length || 0}
-                      </div>
-                    </div>
-                    <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
-                      <div className="text-[11px] text-emerald-700 font-medium">Tổng số người đăng ký</div>
-                      <div className="text-base font-bold text-emerald-800 mt-0.5">
-                        {trainingData?.summary?.totalParticipants || 0}
-                      </div>
-                    </div>
-                  </div>
+                <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-3">
+                  <span className="text-xs text-slate-500">
+                    {trainingData?.collection?.status === 'OPEN' ? 'Đợt khảo sát đang mở tiếp nhận' : 'Đợt khảo sát đã kết thúc'}
+                  </span>
 
-                  {trainingData?.submission ? (
-                    <div className="text-xs text-slate-500 space-y-1 pt-2">
-                      <p>
-                        <span className="font-semibold text-slate-700">Mã đợt:</span>{' '}
-                        {trainingData?.collection?.code || 'KS_2026'}
-                      </p>
-                      <p>
-                        <span className="font-semibold text-slate-700">Cập nhật lúc:</span>{' '}
-                        {new Date(trainingData.submission.updated_at).toLocaleString('vi-VN')}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500 italic py-2">
-                      Đơn vị chưa tiến hành đăng ký nhu cầu đào tạo. Hãy vào khảo sát để chọn các chuyên đề trong khung và ngoài khung cần đào tạo năm 2026.
-                    </p>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {trainingData?.submission?.status === 'SUBMITTED' && (
+                      <Link
+                        href={trainingData?.submission?.receipt_code ? `/unit/receipt?code=${trainingData.submission.receipt_code}` : `/unit/receipt?type=TRAINING_DEMAND&id=${trainingData?.submission?.id}`}
+                        target="_blank"
+                        className="px-3 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1"
+                        title="Mở hoặc in Tờ biên nhận khảo sát đào tạo điện tử"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Biên nhận</span>
+                      </Link>
+                    )}
+                    <Link
+                      href="/unit/training-demand"
+                      className="px-4 py-2 bg-teal-800 hover:bg-teal-900 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
+                    >
+                      <span>
+                        {trainingData?.submission?.status === 'SUBMITTED' ? 'Xem phiếu khảo sát' : 'Vào kê khai đào tạo'}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
                 </div>
               </div>
+            )}
+          </div>
 
-              <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <span className="text-xs text-slate-500">
-                  {trainingData?.collection?.status === 'OPEN' ? 'Đợt khảo sát đang mở' : 'Đợt khảo sát đã kết thúc'}
+          {/* 3. HÀNG 4 THẺ THỐNG KÊ KPI TOÀN MẠNG LƯỚI CHO NHIỆM VỤ ĐỢT NÀY */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* KPI 1: Tổng đơn vị */}
+            <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tổng Đơn vị</span>
+                <span className="p-2 bg-slate-100 rounded-xl text-slate-600">
+                  <Building2 className="w-4 h-4" />
                 </span>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl sm:text-3xl font-black text-slate-900">155</div>
+                <div className="text-xs text-slate-400 mt-0.5">Toàn mạng lưới Agribank</div>
+              </div>
+            </div>
 
-                <div className="flex items-center gap-2">
-                  {trainingData?.submission?.status === 'SUBMITTED' && (
-                    <Link
-                      href={trainingData?.submission?.receipt_code ? `/unit/receipt?code=${trainingData.submission.receipt_code}` : `/unit/receipt?type=TRAINING_DEMAND&id=${trainingData?.submission?.id}`}
-                      target="_blank"
-                      className="px-3 py-2 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1"
-                      title="Mở hoặc in Tờ biên nhận khảo sát đào tạo điện tử"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>Biên nhận</span>
-                    </Link>
-                  )}
-                  <Link
-                    href="/unit/training-demand"
-                    className="px-4 py-2 bg-teal-800 hover:bg-teal-900 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
-                  >
-                    <span>
-                      {trainingData?.submission?.status === 'SUBMITTED' ? 'Xem phiếu khảo sát' : 'Vào kê khai đào tạo'}
-                    </span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </Link>
+            {/* KPI 2: Hoàn thành nộp */}
+            <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Đã Gửi Khảo Sát' : 'Đã Gửi Danh Sách'}
+                </span>
+                <span className="p-2 bg-emerald-50 rounded-xl text-emerald-700">
+                  <CheckCircle2 className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl sm:text-3xl font-black text-emerald-700">
+                  {activeTaskMode === 'TRAINING_DEMAND'
+                    ? adminSummary?.trainingSubmittedCount || 0
+                    : adminSummary?.completedUnits || 0}
+                  <span className="text-xs font-normal text-slate-500 ml-1">/ 155 ĐV</span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div
+                    className="bg-emerald-600 h-1.5 rounded-full"
+                    style={{
+                      width: `${Math.round(((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100)}%`
+                    }}
+                  ></div>
+                </div>
+                <div className="text-[11px] text-emerald-600 font-semibold mt-1">
+                  Đạt {Math.round(((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100)}% hoàn thành
+                </div>
+              </div>
+            </div>
+
+            {/* KPI 3: Chưa nộp / Đang xử lý */}
+            <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">
+                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Chưa Gửi / Đang Soạn' : 'Chưa Nộp / Có Lỗi'}
+                </span>
+                <span className="p-2 bg-amber-50 rounded-xl text-amber-700">
+                  <Clock className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl sm:text-3xl font-black text-amber-700">
+                  {activeTaskMode === 'TRAINING_DEMAND'
+                    ? 155 - (adminSummary?.trainingSubmittedCount || 0)
+                    : 155 - (adminSummary?.completedUnits || 0)}
+                  <span className="text-xs font-normal text-slate-500 ml-1">ĐV</span>
+                </div>
+                <div className="text-xs text-slate-400 mt-1">
+                  {activeTaskMode === 'CANDIDATE_EXAM' && (adminSummary?.errorUnits || 0) > 0
+                    ? `${adminSummary?.errorUnits} đơn vị còn lỗi đối chiếu`
+                    : 'Đang tiếp tục hoàn thiện'}
+                </div>
+              </div>
+            </div>
+
+            {/* KPI 4: Tổng dữ liệu tham gia */}
+            <div className="bg-gradient-to-br from-[#005F3E] to-emerald-900 text-white rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-100 uppercase tracking-wider">
+                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Tổng Nhu Cầu Đào Tạo' : 'Tổng Cán Bộ Dự Thi'}
+                </span>
+                {activeTaskMode === 'TRAINING_DEMAND' ? (
+                  <GraduationCap className="w-5 h-5 text-emerald-200" />
+                ) : (
+                  <FileSpreadsheet className="w-5 h-5 text-emerald-200" />
+                )}
+              </div>
+              <div className="mt-3">
+                <div className="text-2xl sm:text-3xl font-black text-white">
+                  {activeTaskMode === 'TRAINING_DEMAND'
+                    ? (adminSummary?.totalTrainingDemand || 0).toLocaleString('vi-VN')
+                    : (adminSummary?.totalCandidates || 0).toLocaleString('vi-VN')}
+                </div>
+                <div className="text-xs text-emerald-200 mt-0.5">
+                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Lượt người đăng ký toàn hệ thống' : 'Cán bộ kê khai dự thi'}
                 </div>
               </div>
             </div>
           </div>
 
-          {/* HƯỚNG DẪN & QUY ĐỊNH BẮT BUỘC */}
+          {/* 4. BẢNG TIẾN ĐỘ 155 ĐƠN VỊ CHI NHÁNH TOÀN MẠNG LƯỚI CHO NHIỆM VỤ ĐỢT NÀY */}
+          {(() => {
+            const filteredUnits = unitList.filter((u) => {
+              const matchSearch =
+                u.unitCode.toLowerCase().includes(networkSearch.toLowerCase()) ||
+                u.unitName.toLowerCase().includes(networkSearch.toLowerCase()) ||
+                (u.userAccount && u.userAccount.toLowerCase().includes(networkSearch.toLowerCase()));
+
+              if (!matchSearch) return false;
+
+              if (activeTaskMode === 'CANDIDATE_EXAM') {
+                if (networkStatusFilter === 'SUBMITTED') return u.candidateStatus === 'GỬI_CHÍNH_THỨC' || u.candidateStatus === 'HỢP_LỆ';
+                if (networkStatusFilter === 'ERROR') return u.candidateStatus === 'CÓ_LỖI';
+                if (networkStatusFilter === 'NOT_YET') return u.candidateStatus === 'CHƯA_UPLOAD';
+                return true;
+              }
+
+              if (activeTaskMode === 'TRAINING_DEMAND') {
+                if (networkStatusFilter === 'SUBMITTED') return u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC';
+                if (networkStatusFilter === 'DRAFT') return u.trainingStatus === 'ĐANG_SOẠN';
+                if (networkStatusFilter === 'NOT_YET') return u.trainingStatus === 'CHƯA_KÊ_KHAI';
+                return true;
+              }
+
+              if (networkStatusFilter === 'SUBMITTED') return u.overallStatus === 'ĐÃ_NỘP';
+              if (networkStatusFilter === 'DRAFT') return u.overallStatus === 'ĐANG_SOẠN';
+              if (networkStatusFilter === 'ERROR') return u.overallStatus === 'CÓ_LỖI';
+              if (networkStatusFilter === 'NOT_YET') return u.overallStatus === 'CHƯA_NỘP';
+
+              return true;
+            });
+
+            return (
+              <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden space-y-4">
+                <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100">
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                      <Building2 className="w-5 h-5 text-[#005F3E]" />
+                      <span>Tiến độ Thực hiện Nhiệm vụ Toàn Mạng lưới</span>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {filteredUnits.length} / {unitList.length} đơn vị
+                      </span>
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Đơn vị của bạn được đánh dấu viền nổi bật để dễ dàng theo dõi và so sánh tiến độ với các chi nhánh khác.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Lọc trạng thái */}
+                    <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200 text-xs">
+                      <span className="text-slate-400 pl-2">
+                        <Filter className="w-3.5 h-3.5" />
+                      </span>
+                      <button
+                        onClick={() => setNetworkStatusFilter('ALL')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                          networkStatusFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Tất cả
+                      </button>
+                      <button
+                        onClick={() => setNetworkStatusFilter('SUBMITTED')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                          networkStatusFilter === 'SUBMITTED' ? 'bg-emerald-700 text-white shadow-xs' : 'text-emerald-800 hover:bg-emerald-100'
+                        }`}
+                      >
+                        Đã nộp
+                      </button>
+                      <button
+                        onClick={() => setNetworkStatusFilter('NOT_YET')}
+                        className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                          networkStatusFilter === 'NOT_YET' ? 'bg-amber-500 text-slate-950 shadow-xs font-bold' : 'text-amber-800 hover:bg-amber-100'
+                        }`}
+                      >
+                        Chưa nộp
+                      </button>
+                      {activeTaskMode !== 'TRAINING_DEMAND' && (
+                        <button
+                          onClick={() => setNetworkStatusFilter('ERROR')}
+                          className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                            networkStatusFilter === 'ERROR' ? 'bg-[#A81D22] text-white shadow-xs' : 'text-rose-800 hover:bg-rose-100'
+                          }`}
+                        >
+                          Có lỗi
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Ô tìm kiếm */}
+                    <div className="relative w-full sm:w-64">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={networkSearch}
+                        onChange={(e) => setNetworkSearch(e.target.value)}
+                        placeholder="Tìm mã ĐV, tên chi nhánh..."
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#005F3E] focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-[#F8F9FA] text-slate-600 font-bold border-b border-slate-200 uppercase text-[11px]">
+                      <tr>
+                        <th className="px-5 py-3.5 w-14 text-center">STT</th>
+                        <th className="px-5 py-3.5 w-28 text-center">Mã ĐV</th>
+                        <th className="px-5 py-3.5 min-w-[240px]">Tên Đơn vị</th>
+                        <th className="px-5 py-3.5 w-36">Tài khoản</th>
+                        {activeTaskMode !== 'TRAINING_DEMAND' && (
+                          <th className="px-5 py-3.5 w-40 text-center">Tiến độ Thi nghiệp vụ</th>
+                        )}
+                        {activeTaskMode !== 'CANDIDATE_EXAM' && (
+                          <th className="px-5 py-3.5 w-44 text-center">Nhu cầu Đào tạo</th>
+                        )}
+                        <th className="px-5 py-3.5 w-32 text-center">Trạng thái chung</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredUnits.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="text-center py-12 text-slate-400 text-xs">
+                            Không tìm thấy đơn vị nào phù hợp với bộ lọc hiện tại.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredUnits.map((u, i) => {
+                          const isCurrentUnit = u.unitId === myUnitId;
+
+                          let candBadge = <span className="text-slate-400 text-[11px] italic">Chưa nộp</span>;
+                          if (u.candidateStatus === 'GỬI_CHÍNH_THỨC') {
+                            candBadge = (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Đã gửi ({u.validRows})
+                              </span>
+                            );
+                          } else if (u.candidateStatus === 'CÓ_LỖI') {
+                            candBadge = (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-[#A81D22] border border-rose-300">
+                                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                Lỗi {u.errorRows} dòng
+                              </span>
+                            );
+                          } else if (u.candidateStatus === 'HỢP_LỆ') {
+                            candBadge = (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                Hợp lệ ({u.validRows})
+                              </span>
+                            );
+                          }
+
+                          let trainBadge = <span className="text-slate-400 text-[11px] italic">Chưa đăng ký</span>;
+                          if (u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC') {
+                            trainBadge = (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Đã gửi ({u.trainingParticipantsCount})
+                              </span>
+                            );
+                          } else if (u.trainingStatus === 'ĐANG_SOẠN') {
+                            trainBadge = (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                Đang soạn ({u.trainingProgramsCount})
+                              </span>
+                            );
+                          }
+
+                          return (
+                            <tr
+                              key={u.unitId}
+                              className={`transition-colors ${
+                                isCurrentUnit
+                                  ? 'bg-emerald-50/70 border-l-4 border-l-[#005F3E] font-medium'
+                                  : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              <td className="px-5 py-3 text-center text-slate-500 font-mono text-xs">{i + 1}</td>
+                              <td className="px-5 py-3 text-center font-mono font-bold text-slate-900">{u.unitCode}</td>
+                              <td className="px-5 py-3">
+                                <div className="flex items-center gap-2">
+                                  <span className={`font-semibold ${isCurrentUnit ? 'text-[#005F3E] font-bold' : 'text-slate-800'}`}>
+                                    {u.unitName}
+                                  </span>
+                                  {isCurrentUnit && (
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-[#005F3E] text-white shrink-0 shadow-2xs">
+                                      ★ Đơn vị của bạn
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 text-slate-500 font-mono text-[11px]">{u.userAccount || '-'}</td>
+                              {activeTaskMode !== 'TRAINING_DEMAND' && (
+                                <td className="px-5 py-3 text-center">{candBadge}</td>
+                              )}
+                              {activeTaskMode !== 'CANDIDATE_EXAM' && (
+                                <td className="px-5 py-3 text-center">{trainBadge}</td>
+                              )}
+                              <td className="px-5 py-3 text-center">
+                                {u.overallStatus === 'ĐÃ_NỘP' ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    Hoàn thành
+                                  </span>
+                                ) : u.overallStatus === 'CÓ_LỖI' ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                    Có lỗi
+                                  </span>
+                                ) : u.overallStatus === 'ĐANG_SOẠN' ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                    Đang soạn
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                    Chưa nộp
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 5. HƯỚNG DẪN & QUY ĐỊNH BẮT BUỘC */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 space-y-4">
             <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
               <ShieldCheck className="w-5 h-5 text-[#005F3E]" />

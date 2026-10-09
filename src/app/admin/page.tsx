@@ -105,6 +105,8 @@ function AdminDashboardContent() {
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
+  const [activeCampaignTask, setActiveCampaignTask] = useState<string>('CANDIDATE_EXAM');
+  const [updatingCampaign, setUpdatingCampaign] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   // Bộ lọc Dashboard
@@ -132,6 +134,27 @@ function AdminDashboardContent() {
   const [reopenReason, setReopenReason] = useState('');
   const [reopening, setReopening] = useState(false);
   const [reopenError, setReopenError] = useState('');
+
+  const handleUpdateCampaign = async (newTask: string) => {
+    try {
+      setUpdatingCampaign(true);
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'active_campaign_task', value: newTask })
+      });
+      if (res.ok) {
+        setActiveCampaignTask(newTask);
+      } else {
+        const errJson = await res.json();
+        alert(errJson.error || 'Lỗi khi cập nhật cấu hình nhiệm vụ');
+      }
+    } catch (e: any) {
+      alert('Lỗi: ' + e.message);
+    } finally {
+      setUpdatingCampaign(false);
+    }
+  };
 
   const loadData = async (targetExamId?: number, targetCollectionId?: number, catFilter = categoryFilter) => {
     try {
@@ -161,6 +184,9 @@ function AdminDashboardContent() {
       setCollections(dashData.collections || []);
       setExams(dashData.exams || []);
       setUnitList(dashData.unitList || []);
+      if (dashData.activeCampaignTask) {
+        setActiveCampaignTask(dashData.activeCampaignTask);
+      }
 
       if (dashData.selectedExam?.id) setSelectedExamId(dashData.selectedExam.id);
       if (dashData.selectedCollection?.id) setSelectedCollectionId(dashData.selectedCollection.id);
@@ -427,6 +453,79 @@ function AdminDashboardContent() {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-700' : ''}`} />
           </button>
+        </div>
+      </div>
+
+      {/* 1.5 Cấu hình Nhiệm vụ đợt này giao cho 155 Đơn vị */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50/50 to-white rounded-2xl p-4 sm:p-5 border border-emerald-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-[#005F3E] text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+            <Layers className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black uppercase tracking-wider text-[#005F3E]">
+                CẤU HÌNH NHIỆM VỤ ĐỢT NÀY CHO 155 ĐƠN VỊ
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white text-emerald-800 border border-emerald-300 shadow-2xs">
+                Màn hình &quot;Việc cần làm&quot;
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 mt-1">
+              Quyết định nội dung Dashboard mà 155 Chi nhánh nhìn thấy khi vào hệ thống:
+            </p>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            {
+              id: 'CANDIDATE_EXAM',
+              label: 'Chỉ Thi nghiệp vụ / Nhân sự',
+              icon: FileSpreadsheet,
+              desc: 'Kỳ thi cán bộ'
+            },
+            {
+              id: 'TRAINING_DEMAND',
+              label: 'Chỉ Khảo sát Đào tạo',
+              icon: GraduationCap,
+              desc: 'Nhu cầu đào tạo'
+            },
+            {
+              id: 'BOTH',
+              label: 'Cả 2 Nhiệm vụ',
+              icon: Layers,
+              desc: 'Hiển thị song song'
+            },
+            {
+              id: 'AUTO',
+              label: 'Tự động',
+              icon: RefreshCw,
+              desc: 'Theo đợt đang mở'
+            }
+          ].map((item) => {
+            const Icon = item.icon;
+            const isSelected = activeCampaignTask === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                disabled={updatingCampaign || isViewer}
+                onClick={() => handleUpdateCampaign(item.id)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border shadow-2xs ${
+                  isSelected
+                    ? 'bg-[#005F3E] text-white border-[#005F3E] shadow-sm ring-2 ring-emerald-500/20'
+                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
+                } ${isViewer ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                title={item.desc}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-slate-500'}`} />
+                <span>{item.label}</span>
+                {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300"></span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 

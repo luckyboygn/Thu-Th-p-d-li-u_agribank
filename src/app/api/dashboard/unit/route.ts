@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
   }
 
   const exam = examId ? db.prepare('SELECT id, code, title, description, status, start_date, end_date, start_at, end_at FROM exams WHERE id = ?').get(examId) as any : null;
+  const allExams = db.prepare('SELECT id, code, title, status FROM exams ORDER BY id DESC').all() as any[];
 
   // Lấy thông tin gia hạn riêng của đơn vị (nếu có)
   let deadlineExtension: any = null;
@@ -105,7 +106,8 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  const allExams = db.prepare('SELECT id, code, title, status, start_date, end_date FROM exams ORDER BY id DESC').all();
+  const campaignSettingRow = db.prepare("SELECT value FROM system_settings WHERE key = 'active_campaign_task'").get() as any;
+  const activeCampaignTask = campaignSettingRow?.value || 'AUTO';
 
   return NextResponse.json({
     unit,
@@ -116,6 +118,7 @@ export async function GET(req: NextRequest) {
     errors,
     uploadHistory,
     deadlineExtension,
-    reopenInfo
+    reopenInfo,
+    activeCampaignTask
   });
 }

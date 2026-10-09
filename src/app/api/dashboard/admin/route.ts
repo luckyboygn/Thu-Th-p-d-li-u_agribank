@@ -226,11 +226,15 @@ export async function GET(req: NextRequest) {
     ORDER BY f.display_order ASC
   `).all(activeCollectionId) as any[] : [];
 
+  const campaignSettingRow = db.prepare("SELECT value FROM system_settings WHERE key = 'active_campaign_task'").get() as any;
+  const activeCampaignTask = campaignSettingRow?.value || 'AUTO';
+
   return NextResponse.json({
     collections,
     exams,
     selectedCollection,
     selectedExam,
+    activeCampaignTask,
     summary: {
       totalUnits: allUnits.length,
       uploadedUnits: uploadedCount,
