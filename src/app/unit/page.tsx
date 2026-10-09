@@ -8,7 +8,7 @@ import {
   Download, RefreshCw, Send, History, LogOut, Building, Calendar,
   Search, Eye, ShieldCheck, ChevronRight, FileText, Info, Key, UploadCloud,
   Building2, GraduationCap, Layers, Filter, Clock, Check, ChevronLeft,
-  AlertCircle, ArrowRight, Lock, Home, UserPlus
+  AlertCircle, ArrowRight, Lock, Home, UserPlus, FileCheck2
 } from 'lucide-react';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import { ERROR_LABELS, getErrorLabel, getErrorDescription, getErrorBadgeClass } from '@/lib/error-labels';
@@ -86,8 +86,8 @@ function UnitDashboardContent() {
   // Training demand data for unit overview
   const [trainingData, setTrainingData] = useState<any | null>(null);
 
-  // Tab views: TASKS (Việc cần làm), CANDIDATES (Danh sách thí sinh), TRAINING (Khảo sát đào tạo), HISTORY (Lịch sử gửi file), NETWORK (Tổng quan mạng lưới)
-  const [activeTab, setActiveTab] = useState<'TASKS' | 'CANDIDATES' | 'TRAINING' | 'HISTORY' | 'NETWORK'>('TASKS');
+  // Tab views: TASKS (Việc cần làm), CANDIDATES (Danh sách thí sinh), HISTORY (Lịch sử gửi file), NETWORK (Tổng quan mạng lưới)
+  const [activeTab, setActiveTab] = useState<'TASKS' | 'CANDIDATES' | 'HISTORY' | 'NETWORK'>('TASKS');
   const [candidatesSubTab, setCandidatesSubTab] = useState<'ERRORS' | 'RECORDS' | 'HISTORY'>('ERRORS');
 
   // Upload states
@@ -139,13 +139,14 @@ function UnitDashboardContent() {
     } else if (tabParam === 'HISTORY') {
       setActiveTab('HISTORY');
     } else if (tabParam === 'TRAINING') {
-      setActiveTab('TRAINING');
+      router.replace('/unit/training-demand');
+      return;
     } else if (tabParam === 'NETWORK' || tabParam === 'OVERVIEW') {
       setActiveTab('NETWORK');
-    } else if (tabParam === 'TASKS') {
+    } else if (tabParam === 'TASKS' || !tabParam) {
       setActiveTab('TASKS');
     }
-  }, [tabParam]);
+  }, [tabParam, router]);
 
   // Network overview states (all units)
   const [adminSummary, setAdminSummary] = useState<AdminSummary | null>(null);
@@ -590,102 +591,30 @@ function UnitDashboardContent() {
         </div>
       )}
 
-      {/* TOP TAB NAVIGATION BAR (Thống nhất 4 tab rõ ràng) */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-1.5 flex items-center gap-1 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('TASKS')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'TASKS'
-              ? 'bg-[#005F3E] text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <Home className="w-4 h-4" />
-          <span>Việc cần làm</span>
-          {(hasErrors || (!latest && data?.exam?.status === 'OPEN')) && (
-            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-          )}
-        </button>
 
-        <button
-          onClick={() => {
-            setActiveTab('CANDIDATES');
-            setCandidatesSubTab('ERRORS');
-          }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'CANDIDATES'
-              ? 'bg-[#005F3E] text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <FileSpreadsheet className="w-4 h-4" />
-          <span>Danh sách thí sinh</span>
-          {hasErrors ? (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#A81D22] text-white">
-              {latest.error_rows} lỗi
-            </span>
-          ) : isOfficial ? (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
-              Đã nộp
-            </span>
-          ) : latest ? (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500 text-white">
-              0 lỗi
-            </span>
-          ) : null}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('TRAINING')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'TRAINING'
-              ? 'bg-[#005F3E] text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <GraduationCap className="w-4 h-4" />
-          <span>Khảo sát đào tạo</span>
-          {trainingData?.submission?.status === 'SUBMITTED' ? (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white">
-              Đã gửi
-            </span>
-          ) : trainingData?.submission?.status === 'DRAFT' ? (
-            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-slate-900">
-              Đang soạn
-            </span>
-          ) : null}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('HISTORY')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'HISTORY'
-              ? 'bg-[#005F3E] text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>Lịch sử gửi file ({data?.uploadHistory?.length || 0})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('NETWORK')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ml-auto ${
-            activeTab === 'NETWORK'
-              ? 'bg-slate-800 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <Building2 className="w-4 h-4" />
-          <span>Tổng quan mạng lưới ({adminSummary?.totalUnits || unitList?.length || 155} ĐV)</span>
-        </button>
-      </div>
 
       {/* ========================================================================= */}
       {/* TAB 1: VIỆC CẦN LÀM (MẶC ĐỊNH - HIỂN THỊ TRẠNG THÁI CHÍNH ĐƠN VỊ MÌNH) */}
       {/* ========================================================================= */}
       {activeTab === 'TASKS' && (
         <div className="space-y-6">
+          {/* Header Tiêu đề Việc cần làm */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#005F3E] flex items-center justify-center font-bold">
+                <Home className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Việc Cần Làm Của Đơn Vị
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Theo dõi trạng thái hoàn thành nghĩa vụ nộp danh sách thi nghiệp vụ và khảo sát nhu cầu đào tạo năm 2026.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* THẺ 1: TIẾN ĐỘ THI NGHIỆP VỤ */}
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col justify-between">
@@ -951,6 +880,42 @@ function UnitDashboardContent() {
       {/* ========================================================================= */}
       {activeTab === 'CANDIDATES' && (
         <div className="space-y-6">
+          {/* Header Tiêu đề Kê khai danh sách thi nghiệp vụ */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-[#005F3E] flex items-center justify-center font-bold shrink-0">
+                <FileCheck2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Kê Khai Danh Sách Thi Nghiệp Vụ
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Nạp file Excel danh sách cán bộ dự thi, kiểm tra đối chiếu tự động 2 chiều và xác nhận gửi chính thức.
+                </p>
+              </div>
+            </div>
+            {latest && (
+              <div className="flex items-center gap-2">
+                {isOfficial ? (
+                  <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Đã nộp chính thức (v{latest.version})</span>
+                  </span>
+                ) : hasErrors ? (
+                  <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-100 text-[#A81D22] border border-rose-300 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <span>Còn {latest.error_rows} lỗi cần sửa</span>
+                  </span>
+                ) : (
+                  <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                    <span>0 lỗi • Sẵn sàng gửi</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
           {/* KHU VỰC TẢI LÊN EXCEL & THANH HÀNH ĐỘNG */}
           <div className="bg-white rounded-2xl shadow-xs border border-emerald-200 p-6 bg-gradient-to-r from-emerald-50/50 via-white to-amber-50/20 space-y-4">
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
@@ -1470,80 +1435,7 @@ function UnitDashboardContent() {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* TAB 3: KHẢO SÁT ĐÀO TẠO (THÔNG TIN TÓM TẮT & CHUYỂN TRANG) */}
-      {/* ========================================================================= */}
-      {activeTab === 'TRAINING' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-            <div>
-              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-teal-800" />
-                <span>Khảo sát Nhu cầu Đào tạo năm 2026</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Thu thập chỉ tiêu học viên đăng ký theo từng chương trình và chuyên đề.
-              </p>
-            </div>
-            <Link
-              href="/unit/training-demand"
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-teal-800 hover:bg-teal-900 text-white rounded-xl text-xs font-bold shadow-xs transition-colors"
-            >
-              <span>Vào trang Khảo sát chi tiết</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="text-xs font-medium text-slate-500">Trạng thái hồ sơ</div>
-              <div className="text-sm font-bold text-slate-900 mt-1">
-                {trainingData?.submission?.status === 'SUBMITTED' ? 'Đã gửi chính thức' :
-                 trainingData?.submission?.status === 'DRAFT' ? 'Đang soạn thảo' :
-                 trainingData?.submission?.status === 'REOPENED' ? 'Mở lại cho sửa' : 'Chưa kê khai'}
-              </div>
-            </div>
-
-            <div className="p-4 bg-teal-50/50 rounded-xl border border-teal-100">
-              <div className="text-xs font-medium text-teal-700">Chương trình đã chọn</div>
-              <div className="text-base font-bold text-teal-900 mt-1">
-                {trainingData?.summary?.programCount || trainingData?.declaredPrograms?.length || 0} chương trình
-              </div>
-            </div>
-
-            <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
-              <div className="text-xs font-medium text-emerald-700">Tổng lượt người đăng ký</div>
-              <div className="text-base font-bold text-emerald-900 mt-1">
-                {trainingData?.summary?.totalParticipants || 0} lượt người
-              </div>
-            </div>
-          </div>
-
-          {trainingData?.declaredPrograms && trainingData.declaredPrograms.length > 0 && (
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                Các chương trình đơn vị đã đăng ký:
-              </h4>
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden text-xs">
-                {trainingData.declaredPrograms.map((p: any) => (
-                  <div key={p.program_id} className="p-3.5 flex items-center justify-between hover:bg-slate-50">
-                    <div>
-                      <div className="font-bold text-slate-900">{p.program_name}</div>
-                      <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                        Mã: {p.program_code} | Nhóm: {p.group_name}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-bold text-emerald-700 text-sm">{p.sum_participants}</span>
-                      <span className="text-slate-500 text-[11px] ml-1">người</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* TAB 4: LỊCH SỬ GỬI FILE & PHIÊN BẢN */}

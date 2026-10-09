@@ -80,6 +80,10 @@ export default function UnitLayout({ children }: UnitLayoutProps) {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      if (pathname.startsWith('/unit/training-demand')) {
+        setActiveTabParam('TRAINING_DEMAND');
+        return;
+      }
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab') || 'TASKS';
       setActiveTabParam(tab);
@@ -172,10 +176,10 @@ export default function UnitLayout({ children }: UnitLayoutProps) {
               const Icon = item.icon;
               const isActive = 
                 (item.id === 'TRAINING_DEMAND' && pathname.startsWith('/unit/training-demand')) ||
-                (item.id === 'TASKS' && (activeTabParam === 'TASKS' || (!activeTabParam && pathname === '/unit') || activeTabParam === 'OVERVIEW')) ||
-                (item.id === 'CANDIDATES' && (activeTabParam === 'CANDIDATES' || activeTabParam === 'ERRORS' || activeTabParam === 'UPLOAD' || activeTabParam === 'RECORDS')) ||
-                (item.id === 'HISTORY' && activeTabParam === 'HISTORY') ||
-                (item.id === 'NETWORK' && activeTabParam === 'NETWORK');
+                (item.id === 'TASKS' && !pathname.startsWith('/unit/training-demand') && (activeTabParam === 'TASKS' || !activeTabParam || activeTabParam === 'OVERVIEW')) ||
+                (item.id === 'CANDIDATES' && !pathname.startsWith('/unit/training-demand') && (activeTabParam === 'CANDIDATES' || activeTabParam === 'ERRORS' || activeTabParam === 'UPLOAD' || activeTabParam === 'RECORDS')) ||
+                (item.id === 'HISTORY' && !pathname.startsWith('/unit/training-demand') && activeTabParam === 'HISTORY') ||
+                (item.id === 'NETWORK' && !pathname.startsWith('/unit/training-demand') && activeTabParam === 'NETWORK');
               return (
                 <Link
                   key={item.id}
