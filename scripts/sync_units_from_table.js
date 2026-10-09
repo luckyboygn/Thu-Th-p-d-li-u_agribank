@@ -1,0 +1,246 @@
+const { DatabaseSync } = require('node:sqlite');
+const bcrypt = require('bcryptjs');
+const path = require('path');
+
+const dbPath = path.join(__dirname, '..', 'data', 'database.sqlite');
+const db = new DatabaseSync(dbPath);
+
+console.log('--- KHỞI TẠO TÀI KHOẢN VÀ ĐƠN VỊ TỪ BẢNG MÔ TẢ ---');
+
+const unitsData = [
+  { stt: 1, user: '1300_Admin', name: 'Agribank Chi nhánh Thăng Long' },
+  { stt: 2, user: '3100_Admin', name: 'Agribank Chi nhánh Từ Liêm' },
+  { stt: 3, user: '1506_Admin', name: 'Agribank Chi nhánh Tây Hồ' },
+  { stt: 4, user: '1507_Admin', name: 'Agribank Chi nhánh Cầu Giấy' },
+  { stt: 5, user: '1400_Admin', name: 'Agribank Chi nhánh Láng Hạ' },
+  { stt: 6, user: '1200_Admin', name: 'Agribank Chi nhánh Sở giao dịch' },
+  { stt: 7, user: '2200_Admin', name: 'Agribank Chi nhánh Hà Tây' },
+  { stt: 8, user: '1900_Admin', name: 'Agribank Chi nhánh Trung tâm Sài Gòn' },
+  { stt: 9, user: '1452_Admin', name: 'Agribank Chi nhánh Hùng Vương' },
+  { stt: 10, user: '1050_Admin', name: 'Agribank Chi nhánh Ngân quỹ Miền Bắc' },
+  { stt: 11, user: '1401_Admin', name: 'Agribank Chi nhánh Hà Nội I' },
+  { stt: 12, user: '3401_Admin', name: 'Agribank Chi nhánh Bắc Thái Bình' },
+  { stt: 13, user: '3180_Admin', name: 'Agribank Chi nhánh Thanh Trì' },
+  { stt: 14, user: '1410_Admin', name: 'Agribank Chi nhánh Mỹ Đình' },
+  { stt: 15, user: '2900_Admin', name: 'Agribank Chi nhánh Hà Nam' },
+  { stt: 16, user: '1503_Admin', name: 'Agribank Chi nhánh Lý Thường Kiệt' },
+  { stt: 17, user: '6160_Admin', name: 'Agribank Chi nhánh 4' },
+  { stt: 18, user: '1608_Admin', name: 'Agribank Chi nhánh An Phú' },
+  { stt: 19, user: '6600_Admin', name: 'Agribank Chi nhánh Long An' },
+  { stt: 20, user: '1604_Admin', name: 'Agribank Chi nhánh Phú Nhuận' },
+  { stt: 21, user: '5900_Admin', name: 'Agribank Chi nhánh Đồng Nai' },
+  { stt: 22, user: '1650_Admin', name: 'Agribank Chi nhánh Bến Thành' },
+  { stt: 23, user: '6200_Admin', name: 'Agribank Chi nhánh Khu công nghiệp Tân Tạo' },
+  { stt: 24, user: '1700_Admin', name: 'Agribank Chi nhánh Thành phố Hồ Chí Minh' },
+  { stt: 25, user: '5601_Admin', name: 'Agribank Chi nhánh Tây Bình Phước' },
+  { stt: 26, user: '6000_Admin', name: 'Agribank Chi nhánh Bà Rịa Vũng Tàu' },
+  { stt: 27, user: '5911_Admin', name: 'Agribank Chi nhánh Nam Đồng Nai' },
+  { stt: 28, user: '6140_Admin', name: 'Agribank Chi nhánh Hóc Môn' },
+  { stt: 29, user: '6321_Admin', name: 'Agribank Chi nhánh Bắc Sài Gòn' },
+  { stt: 30, user: '6400_Admin', name: 'Agribank Chi nhánh Gia Định' },
+  { stt: 31, user: '2000_Admin', name: 'Agribank Chi nhánh Đà Nẵng' },
+  { stt: 32, user: '5100_Admin', name: 'Agribank Chi nhánh Kon Tum' },
+  { stt: 33, user: '2600_VP_Admin', name: 'Agribank Chi nhánh Vĩnh Phúc' },
+  { stt: 34, user: '1500_Admin', name: 'Agribank Chi nhánh Hà Nội' },
+  { stt: 35, user: '3800_Admin', name: 'Agribank Chi nhánh Quảng Bình' },
+  { stt: 36, user: '3801_Admin', name: 'Agribank Chi nhánh Bắc Quảng Bình' },
+  { stt: 37, user: '6260_Admin', name: 'Agribank Chi nhánh Đông Sài Gòn' },
+  { stt: 38, user: '5500_ST_Admin', name: 'Agribank Chi nhánh Khu công nghiệp Sóng Thần' },
+  { stt: 39, user: '8802_Admin', name: 'Agribank Chi nhánh Lào Cai II' },
+  { stt: 40, user: '8800_Admin', name: 'Agribank Chi nhánh Lào Cai' },
+  { stt: 41, user: '6360_Admin', name: 'Agribank Chi nhánh Tân Bình' },
+  { stt: 42, user: '6421_Admin', name: 'Agribank Chi nhánh Bắc Thành phố Hồ Chí Minh' },
+  { stt: 43, user: '1600_Admin', name: 'Agribank Chi nhánh Sài Gòn' },
+  { stt: 44, user: '6170_Admin', name: 'Agribank Chi nhánh 7' },
+  { stt: 45, user: '3400_Admin', name: 'Agribank Chi nhánh Thái Bình' },
+  { stt: 46, user: '3203_Admin', name: 'Agribank Chi nhánh Bắc Nam Định' },
+  { stt: 47, user: '1220_Admin', name: 'Agribank Chi nhánh Long Biên' },
+  { stt: 48, user: '2117_Admin', name: 'Agribank Chi nhánh Đông Hải Phòng' },
+  { stt: 49, user: '2603_Admin', name: 'Agribank Chi nhánh Bắc Ninh II' },
+  { stt: 50, user: '2407_Admin', name: 'Agribank Chi nhánh Hưng Yên II' },
+  { stt: 51, user: '1302_Admin', name: 'Agribank Chi nhánh Hà Thành' },
+  { stt: 52, user: '3120_Admin', name: 'Agribank Chi nhánh Gia Lâm' },
+  { stt: 53, user: '3140_Admin', name: 'Agribank Chi nhánh Đông Anh' },
+  { stt: 54, user: '1850_Admin', name: 'Agribank Chi nhánh Cần Thơ II' },
+  { stt: 55, user: '3519_Admin', name: 'Agribank Chi nhánh Nam Thanh Hóa' },
+  { stt: 56, user: '1800_Admin', name: 'Agribank Chi nhánh Cần Thơ' },
+  { stt: 57, user: '7709_Admin', name: 'Agribank Chi nhánh Kiên Giang II' },
+  { stt: 58, user: '8500_Admin', name: 'Agribank Chi nhánh Thái Nguyên' },
+  { stt: 59, user: '2300_Admin', name: 'Agribank Chi nhánh Hải Dương' },
+  { stt: 60, user: '8501_Admin', name: 'Agribank Chi nhánh Nam Thái Nguyên' },
+  { stt: 61, user: '8100_Admin', name: 'Agribank Chi nhánh Tuyên Quang' },
+  { stt: 62, user: '2001_Admin', name: 'Agribank Chi nhánh Nam Đà Nẵng' },
+  { stt: 63, user: '6110_Admin', name: 'Agribank Chi nhánh Bình Triệu' },
+  { stt: 64, user: '6300_Admin', name: 'Agribank Chi nhánh 9' },
+  { stt: 65, user: '2400_Admin', name: 'Agribank Chi nhánh Hưng Yên' },
+  { stt: 66, user: '6350_Admin', name: 'Agribank Chi nhánh Thủ Đức' },
+  { stt: 67, user: '3011_Admin', name: 'Agribank Chi nhánh Tây Nghệ An' },
+  { stt: 68, user: '2800_Admin', name: 'Agribank Chi nhánh Nghệ An' },
+  { stt: 69, user: '3700_Admin', name: 'Agribank Chi nhánh Hà Tĩnh' },
+  { stt: 70, user: '2801_Admin', name: 'Agribank Chi nhánh Nam Nghệ An' },
+  { stt: 71, user: '6340_Admin', name: 'Agribank Chi nhánh Nhà Bè' },
+  { stt: 72, user: '6222_Admin', name: 'Agribank Chi nhánh 5' },
+  { stt: 73, user: '5200_Admin', name: 'Agribank Chi nhánh Đắk Lắk' },
+  { stt: 74, user: '7300_Admin', name: 'Agribank Chi nhánh Vĩnh Long' },
+  { stt: 75, user: '1602_Admin', name: 'Agribank Chi nhánh Tân Định' },
+  { stt: 76, user: '6460_Admin', name: 'Agribank Chi nhánh 10' },
+  { stt: 77, user: '6603_Admin', name: 'Agribank Chi nhánh Đông Long An' },
+  { stt: 78, user: '6180_Admin', name: 'Agribank Chi nhánh Cần Giờ' },
+  { stt: 79, user: '1702_Admin', name: 'Agribank Chi nhánh 8' },
+  { stt: 80, user: '6280_Admin', name: 'Agribank Chi nhánh Bình Thạnh' },
+  { stt: 81, user: '2707_Admin', name: 'Agribank Chi nhánh Phú Thọ II' },
+  { stt: 82, user: '2507_Admin', name: 'Agribank Chi nhánh Mê Linh' },
+  { stt: 83, user: '2501_Admin', name: 'Agribank Chi nhánh Lạc Long Quân' },
+  { stt: 84, user: '3701_Admin', name: 'Agribank Chi nhánh Hà Tĩnh II' },
+  { stt: 85, user: '2311_Admin', name: 'Agribank Chi nhánh Hải Dương II' },
+  { stt: 86, user: '6900_Admin', name: 'Agribank Chi nhánh Tiền Giang' },
+  { stt: 87, user: '6440_Admin', name: 'Agribank Chi nhánh Nam Thành phố Hồ Chí Minh' },
+  { stt: 88, user: '6120_Admin', name: 'Agribank Chi nhánh Củ Chi' },
+  { stt: 89, user: '5950_Admin', name: 'Agribank Chi nhánh Bắc Đồng Nai' },
+  { stt: 90, user: '3500_Admin', name: 'Agribank Chi nhánh Bắc Thanh Hóa' },
+  { stt: 91, user: '3502_Admin', name: 'Agribank Chi nhánh Thanh Hóa' },
+  { stt: 92, user: '8707_Admin', name: 'Agribank Chi nhánh Bắc Yên Bái' },
+  { stt: 93, user: '7100_Admin', name: 'Agribank Chi nhánh Bến Tre' },
+  { stt: 94, user: '5500_Admin', name: 'Agribank Chi nhánh Bình Dương' },
+  { stt: 95, user: '4900_Admin', name: 'Agribank Chi nhánh Ninh Thuận' },
+  { stt: 96, user: '6700_Admin', name: 'Agribank Chi nhánh An Giang' },
+  { stt: 97, user: '9300_Admin', name: 'Agribank Chi nhánh Campuchia' },
+  { stt: 98, user: '5213_Admin', name: 'Agribank Chi nhánh Bắc Đắk Lắk' },
+  { stt: 99, user: '6612_Admin', name: 'Agribank Chi nhánh Bắc Long An' },
+  { stt: 100, user: '5407_Admin', name: 'Agribank Chi nhánh Lâm Đồng II' },
+  { stt: 101, user: '2700_Admin', name: 'Agribank Chi nhánh Phú Thọ' },
+  { stt: 102, user: '2500_Admin', name: 'Agribank Chi nhánh Bắc Giang' },
+  { stt: 103, user: '2100_Admin', name: 'Agribank Chi nhánh Hải Phòng' },
+  { stt: 104, user: '3900_Admin', name: 'Agribank Chi nhánh Quảng Trị' },
+  { stt: 105, user: '4000_Admin', name: 'Agribank Chi nhánh Huế' },
+  { stt: 106, user: '1240_Admin', name: 'Agribank Chi nhánh Hoàng Mai' },
+  { stt: 107, user: '2600_Admin', name: 'Agribank Chi nhánh Bắc Ninh' },
+  { stt: 108, user: '1505_Admin', name: 'Agribank Chi nhánh Hà Nội II' },
+  { stt: 109, user: '2208_Admin', name: 'Agribank Chi nhánh Thường Tín' },
+  { stt: 110, user: '1307_Admin', name: 'Agribank Chi nhánh Tràng Tiền' },
+  { stt: 111, user: '4700_Admin', name: 'Agribank Chi nhánh Khánh Hòa' },
+  { stt: 112, user: '6450_Admin', name: 'Agribank Chi nhánh Tân Phú' },
+  { stt: 113, user: '7200_Admin', name: 'Agribank Chi nhánh Bạc Liêu' },
+  { stt: 114, user: '7500_Admin', name: 'Agribank Chi nhánh Cà Mau' },
+  { stt: 115, user: '3200_Admin', name: 'Agribank Chi nhánh Nam Định' },
+  { stt: 116, user: '7800_Admin', name: 'Agribank Chi nhánh Lai Châu' },
+  { stt: 117, user: '1508_Admin', name: 'Agribank Chi nhánh Tam Trinh' },
+  { stt: 118, user: '8300_Admin', name: 'Agribank Chi nhánh Điện Biên' },
+  { stt: 119, user: '8003_Admin', name: 'Agribank Chi nhánh Tây Quảng Ninh' },
+  { stt: 120, user: '8900_Admin', name: 'Agribank Chi nhánh Cao Bằng' },
+  { stt: 121, user: '3000_Admin', name: 'Agribank Chi nhánh Hòa Bình' },
+  { stt: 122, user: '8090_Admin', name: 'Agribank Chi nhánh Đông Quảng Ninh' },
+  { stt: 123, user: '7790_Admin', name: 'Agribank Chi nhánh Phú Quốc' },
+  { stt: 124, user: '5600_Admin', name: 'Agribank Chi nhánh Bình Phước' },
+  { stt: 125, user: '5020_Admin', name: 'Agribank Chi nhánh Đông Gia Lai' },
+  { stt: 126, user: '7600_Admin', name: 'Agribank Chi nhánh Sóc Trăng' },
+  { stt: 127, user: '7700_Admin', name: 'Agribank Chi nhánh Kiên Giang' },
+  { stt: 128, user: '5400_Admin', name: 'Agribank Chi nhánh Lâm Đồng' },
+  { stt: 129, user: '3302_Admin', name: 'Agribank Chi nhánh Nam Ninh Bình' },
+  { stt: 130, user: '4800_Admin', name: 'Agribank Chi nhánh Bình Thuận' },
+  { stt: 131, user: '4300_Admin', name: 'Agribank Chi nhánh Bình Định' },
+  { stt: 132, user: '8600_Admin', name: 'Agribank Chi nhánh Bắc Kạn' },
+  { stt: 133, user: '2690_Admin', name: 'Agribank Chi nhánh Vĩnh Phúc II' },
+  { stt: 134, user: '2111_Admin', name: 'Agribank Chi nhánh Bắc Hải Phòng' },
+  { stt: 135, user: '6220_Admin', name: 'Agribank Chi nhánh Chợ Lớn' },
+  { stt: 136, user: '4200_Admin', name: 'Agribank Chi nhánh Quảng Nam' },
+  { stt: 137, user: '4500_Admin', name: 'Agribank Chi nhánh Quảng Ngãi' },
+  { stt: 138, user: '7000_Admin', name: 'Agribank Chi nhánh Hậu Giang' },
+  { stt: 139, user: '8400_Admin', name: 'Agribank Chi nhánh Lạng Sơn' },
+  { stt: 140, user: '6090_Admin', name: 'Agribank Chi nhánh Vũng Tàu' },
+  { stt: 141, user: '6320_Admin', name: 'Agribank Chi nhánh Tây Sài Gòn' },
+  { stt: 142, user: '5000_Admin', name: 'Agribank Chi nhánh Gia Lai' },
+  { stt: 143, user: '1440_Admin', name: 'Agribank Chi nhánh Bắc Hà Nội' },
+  { stt: 144, user: '1305_Admin', name: 'Agribank Chi nhánh Tràng An' },
+  { stt: 145, user: '8000_Admin', name: 'Agribank Chi nhánh Quảng Ninh' },
+  { stt: 146, user: '3300_Admin', name: 'Agribank Chi nhánh Ninh Bình' },
+  { stt: 147, user: '2202_Admin', name: 'Agribank Chi nhánh Hà Tây I' },
+  { stt: 148, user: '8700_Admin', name: 'Agribank Chi nhánh Yên Bái' },
+  { stt: 149, user: '7902_Admin', name: 'Agribank Chi nhánh Sơn La II' },
+  { stt: 150, user: '7900_Admin', name: 'Agribank Chi nhánh Sơn La' },
+  { stt: 151, user: '2905_Admin', name: 'Agribank Chi nhánh Hà Nam II' },
+  { stt: 152, user: '6500_Admin', name: 'Agribank Chi nhánh Đồng Tháp' },
+  { stt: 153, user: '1504_Admin', name: 'Agribank Chi nhánh Đống Đa' },
+  { stt: 154, user: '5700_Admin', name: 'Agribank Chi nhánh Tây Ninh' },
+  { stt: 155, user: '5300_Admin', name: 'Agribank Chi nhánh Đắk Nông' },
+  { stt: 156, user: '3160_Admin', name: 'Agribank Chi nhánh Sóc Sơn' },
+  { stt: 157, user: '4600_Admin', name: 'Agribank Chi nhánh Phú Yên' },
+  { stt: 158, user: '8200_Admin', name: 'Agribank Chi nhánh Hà Giang' },
+  { stt: 159, user: '7400_Admin', name: 'Agribank Chi nhánh Trà Vinh' }
+];
+
+// Hash mật khẩu chuẩn
+const salt = bcrypt.genSaltSync(10);
+const unitPassHash = bcrypt.hashSync('Unit@123456', salt);
+
+db.exec('BEGIN TRANSACTION;');
+
+try {
+  // Cập nhật cấu trúc bảng units nếu chưa có cột user_account
+  const tableInfo = db.prepare("PRAGMA table_info(units)").all();
+  const hasUserAccount = tableInfo.some(c => c.name === 'user_account');
+  if (!hasUserAccount) {
+    db.exec("ALTER TABLE units ADD COLUMN user_account TEXT;");
+  }
+
+  // Chuẩn bị statement
+  const findUnitByCode = db.prepare('SELECT id, unit_code FROM units WHERE unit_code = ?');
+  const findUnitByName = db.prepare('SELECT id, unit_code FROM units WHERE unit_name = ?');
+  const insertUnit = db.prepare("INSERT INTO units (unit_code, unit_name, user_account, status) VALUES (?, ?, ?, 'ACTIVE')");
+  const updateUnit = db.prepare('UPDATE units SET unit_name = ?, user_account = ? WHERE id = ?');
+  
+  const findUserByUsername = db.prepare('SELECT id FROM users WHERE username = ?');
+  const insertUser = db.prepare(`
+    INSERT INTO users (username, password_hash, full_name, role, unit_id, status)
+    VALUES (?, ?, ?, 'UNIT_ADMIN', ?, 'ACTIVE')
+  `);
+  const updateUser = db.prepare(`
+    UPDATE users SET full_name = ?, unit_id = ?, password_hash = ? WHERE id = ?
+  `);
+
+  let countUnits = 0;
+  let countUsers = 0;
+
+  for (const item of unitsData) {
+    // Trích xuất mã đơn vị từ user, ví dụ: 1300_Admin -> 1300
+    const code = item.user.split('_')[0];
+    
+    // Tìm đơn vị theo mã hoặc tên
+    let unit = findUnitByCode.get(code);
+    if (!unit) {
+      unit = findUnitByName.get(item.name);
+    }
+
+    let unitId;
+    if (unit) {
+      unitId = unit.id;
+      updateUnit.run(item.name, item.user, unitId);
+    } else {
+      // Nếu mã đã tồn tại ở đơn vị khác (trường hợp trùng mã), tạo mã duy nhất
+      let uniqueCode = code;
+      if (findUnitByCode.get(uniqueCode)) {
+        uniqueCode = `${code}_${item.stt}`;
+      }
+      const res = insertUnit.run(uniqueCode, item.name, item.user);
+      unitId = res.lastInsertRowid;
+    }
+    countUnits++;
+
+    // Tạo hoặc cập nhật tài khoản người dùng (user)
+    const existingUser = findUserByUsername.get(item.user);
+    if (existingUser) {
+      updateUser.run(item.name, unitId, unitPassHash, existingUser.id);
+    } else {
+      insertUser.run(item.user, unitPassHash, item.name, unitId);
+    }
+    countUsers++;
+  }
+
+  db.exec('COMMIT;');
+  console.log(`✅ Đã đồng bộ thành công ${countUnits} đơn vị vào bảng units.`);
+  console.log(`✅ Đã khởi tạo thành công ${countUsers} tài khoản người dùng vào bảng users.`);
+} catch (err) {
+  db.exec('ROLLBACK;');
+  console.error('❌ Lỗi khi đồng bộ dữ liệu:', err);
+  process.exit(1);
+}

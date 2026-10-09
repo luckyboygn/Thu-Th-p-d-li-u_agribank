@@ -1,0 +1,60 @@
+{
+  "name": "exam-candidate-management",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test:validation": "node scripts/test_validation_engine.js",
+    "test:security0": "npx tsx scripts/test_security_part0.ts",
+    "test:deadlines": "npx tsx scripts/test_deadlines_suite.ts",
+    "test:users": "npx tsx scripts/test_user_unit_management.ts",
+    "test:receipts": "npx tsx scripts/test_receipt_generation_suite.ts",
+    "test:hierarchy": "npx tsx scripts/test_unit_hierarchy_suite.ts",
+    "test:master-lifecycle": "npx tsx scripts/test_master_db_lifecycle_suite.ts",
+    "test:audit-logs": "npx tsx scripts/test_audit_logs_suite.ts",
+    "test:notifications": "npx tsx scripts/test_inapp_notifications_suite.ts",
+    "test:comparison": "npx tsx scripts/test_survey_comparison_suite.ts",
+    "test:proposals": "npx tsx scripts/test_proposals_and_notes_suite.ts",
+    "migrate:token-version": "node scripts/migrate_token_version.js",
+    "migrate:proposals": "node scripts/migrate_proposals_and_notes.js",
+    "migrate:deadlines": "node scripts/migrate_deadlines_and_extensions.js",
+    "migrate:reopen": "node scripts/migrate_reopen_submission.js",
+    "migrate:emp-requests": "node scripts/migrate_employee_add_requests.js",
+    "migrate:warning-severity": "node scripts/migrate_warning_severity.js",
+    "migrate:maker-checker": "node scripts/migrate_maker_checker.js",
+    "migrate:receipts": "node scripts/migrate_submission_receipts.js",
+    "migrate:hierarchy": "node scripts/migrate_unit_hierarchy.js",
+    "migrate:master-lifecycle": "node scripts/migrate_employee_lifecycle.js",
+    "reset:unit-passwords": "node scripts/reset_unit_passwords.js",
+    "db:init": "node scripts/init_database.js",
+    "db:seed": "node scripts/seed_database.js",
+    "db:clean-demo": "node scripts/cleanup_demo_data.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "docx": "^9.8.1",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^1.16.0",
+    "next": "^15.1.0",
+    "puppeteer-core": "^25.12.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2"
+  }
+}
