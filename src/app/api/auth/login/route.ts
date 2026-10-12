@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
-import { verifyPassword, signToken, UserSession } from '@/lib/auth';
+import { verifyPassword, signToken, UserSession, SESSION_INACTIVITY_TIMEOUT_SECONDS } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { PASSWORD_POLICY, isPasswordExpired } from '@/lib/password-policy';
 
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
       value: token,
       httpOnly: true,
       path: '/',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: SESSION_INACTIVITY_TIMEOUT_SECONDS,
       sameSite: 'lax',
     });
 

@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   },
 };
 
+import InactivityTracker from '@/components/InactivityTracker';
+
 export default function RootLayout({
   children,
 }: {
@@ -17,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+        <InactivityTracker />
         {children}
       </body>
     </html>

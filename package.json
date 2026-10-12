@@ -12,6 +12,7 @@
     "db:sync-cloud": "node scripts/sync_db_from_cloud.js",
     "test:validation": "node scripts/test_validation_engine.js",
     "test:security0": "npx tsx scripts/test_security_part0.ts",
+    "test:inactivity": "npx tsx scripts/test_inactivity_timeout_suite.ts",
     "test:deadlines": "npx tsx scripts/test_deadlines_suite.ts",
     "test:users": "npx tsx scripts/test_user_unit_management.ts",
     "test:receipts": "npx tsx scripts/test_receipt_generation_suite.ts",

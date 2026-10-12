@@ -69,9 +69,24 @@ export default function UnitLayout({ children }: UnitLayoutProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const [sessionRemaining, setSessionRemaining] = useState<string>('15:00');
+
+  useEffect(() => {
+    const handleTick = (e: any) => {
+      const ms = e.detail?.remainingMs || 0;
+      const totalSecs = Math.floor(ms / 1000);
+      const m = Math.floor(totalSecs / 60);
+      const s = totalSecs % 60;
+      setSessionRemaining(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+    };
+    window.addEventListener('agribank_session_tick', handleTick);
+    return () => window.removeEventListener('agribank_session_tick', handleTick);
+  }, []);
+
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     localStorage.removeItem('auth_user');
+    localStorage.removeItem('agribank_last_active');
     router.push('/login');
   };
 
@@ -232,6 +247,16 @@ export default function UnitLayout({ children }: UnitLayoutProps) {
                   placeholder="Tìm kiếm..."
                   className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-full text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#005F3E] focus:bg-white"
                 />
+              </div>
+
+              {/* Đồng hồ phiên làm việc tự động khóa sau 15 phút */}
+              <div
+                className="hidden lg:flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200/90 rounded-full text-[11px] font-mono text-slate-600 shadow-2xs select-none"
+                title="Hệ thống tự động đăng xuất sau 15 phút không có thao tác để đảm bảo an toàn bảo mật"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                <span className="text-[10px] uppercase font-sans font-bold text-slate-400">Phiên:</span>
+                <span className="font-bold text-[#005F3E]">{sessionRemaining}</span>
               </div>
 
               {/* Chuông thông báo */}

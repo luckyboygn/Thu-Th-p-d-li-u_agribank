@@ -39,8 +39,23 @@ export function verifyPassword(password: string, hash: string): boolean {
   return bcrypt.compareSync(password, hash);
 }
 
-export function signToken(payload: UserSession): string {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: '7d' });
+// Thời gian hết hạn phiên làm việc khi không hoạt động: 15 phút (900 giây)
+export const SESSION_INACTIVITY_TIMEOUT_SECONDS = 15 * 60;
+
+export function signToken(payload: UserSession, expiresInSeconds: number = SESSION_INACTIVITY_TIMEOUT_SECONDS): string {
+  // Loại bỏ các trường iat, exp tự sinh của JWT nếu payload được truyền từ token đã giải mã
+  const cleanPayload: UserSession = {
+    id: payload.id,
+    username: payload.username,
+    fullName: payload.fullName,
+    role: payload.role,
+    unitId: payload.unitId,
+    unitCode: payload.unitCode,
+    unitName: payload.unitName,
+    tokenVersion: payload.tokenVersion,
+    mustChangePassword: payload.mustChangePassword
+  };
+  return jwt.sign(cleanPayload, getJwtSecret(), { expiresIn: expiresInSeconds });
 }
 
 export function verifyToken(token: string): UserSession | null {

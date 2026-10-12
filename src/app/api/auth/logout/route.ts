@@ -15,6 +15,15 @@ export async function POST(req: NextRequest) {
   }
 
   const response = NextResponse.json({ success: true, message: 'Đăng xuất thành công.' });
+  response.cookies.set({
+    name: 'auth_token',
+    value: '',
+    path: '/',
+    maxAge: 0,
+    expires: new Date(0),
+    httpOnly: true,
+    sameSite: 'lax'
+  });
   response.cookies.delete('auth_token');
   return response;
 }

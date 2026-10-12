@@ -1,11 +1,14 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { ShieldCheck, UserCheck, Lock, AlertCircle, Building2, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ShieldCheck, UserCheck, Lock, AlertCircle, Building2, ArrowRight, Clock } from 'lucide-react';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const reason = searchParams.get('reason');
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -13,6 +16,10 @@ export default function LoginPage() {
   const [buildTime, setBuildTime] = useState<string>(process.env.NEXT_PUBLIC_APP_BUILD_TIME || '09/10/2026 15:58');
 
   useEffect(() => {
+    // Khi người dùng vào trang đăng nhập, dọn dẹp sạch sẽ cache hoạt động cũ
+    localStorage.removeItem('auth_user');
+    localStorage.removeItem('agribank_last_active');
+
     fetch('/api/version')
       .then((res) => res.json())
       .then((data) => {
@@ -46,8 +53,9 @@ export default function LoginPage() {
         throw new Error(data.error || 'Đăng nhập không thành công.');
       }
 
-      // Lưu user vào localStorage để tiện hiển thị client-side
+      // Lưu user và mốc hoạt động ban đầu vào localStorage
       localStorage.setItem('auth_user', JSON.stringify(data.user));
+      localStorage.setItem('agribank_last_active', String(Date.now()));
 
       if (data.user.role === 'SUPER_ADMIN') {
         router.push('/admin');
@@ -79,6 +87,18 @@ export default function LoginPage() {
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-6 shadow-md rounded-lg sm:px-10 border border-[#E2E8F0]">
+          {reason === 'timeout' && (
+            <div className="mb-5 bg-amber-50 border-2 border-amber-300 p-4 rounded-xl flex items-start gap-3 shadow-xs">
+              <Clock className="w-5 h-5 text-amber-700 shrink-0 mt-0.5 animate-pulse" />
+              <div>
+                <p className="text-xs font-bold text-amber-900">Phiên làm việc đã hết hạn</p>
+                <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                  Hệ thống đã tự động đăng xuất sau 15 phút không có thao tác để đảm bảo an toàn bảo mật. Vui lòng đăng nhập lại.
+                </p>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="mb-5 bg-rose-50 border-l-4 border-[#A81D22] p-4 rounded-r-md flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-[#A81D22] shrink-0 mt-0.5" />
@@ -144,5 +164,17 @@ export default function LoginPage() {
         <span className="font-mono text-[#005F3E] font-bold">{buildTime}</span>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#F4F6F8] flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
