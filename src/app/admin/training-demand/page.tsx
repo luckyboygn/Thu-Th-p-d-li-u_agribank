@@ -16,6 +16,7 @@ import {
   BarChart3,
   Layers,
   ArrowRight,
+  ArrowLeft,
   RefreshCw,
   AlertTriangle,
   Check,
@@ -118,12 +119,13 @@ export default function AdminTrainingDemandPage() {
   const [topicReportLoading, setTopicReportLoading] = useState(false);
 
   // Tab 3: Unit drill-down state
-  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
+  const [selectedUnitId, setSelectedUnitId] = useState<number | 'ALL'>('ALL');
   const [unitSearch, setUnitSearch] = useState('');
   const [unitReportData, setUnitReportData] = useState<any>(null);
   const [unitReportLoading, setUnitReportLoading] = useState(false);
   const [reopenLoading, setReopenLoading] = useState(false);
   const [reopenSuccess, setReopenSuccess] = useState('');
+  const [allUnitsStatusFilter, setAllUnitsStatusFilter] = useState<'ALL' | 'SUBMITTED' | 'DRAFT' | 'NOT_SUBMITTED'>('ALL');
 
   // Tab 4: Master Catalog Audit & Management state (Stage 2)
   const [catalogSubTab, setCatalogSubTab] = useState<'browse' | 'audit'>('browse');
@@ -200,9 +202,7 @@ export default function AdminTrainingDemandPage() {
       if (uRes.ok) {
         const uJson = await uRes.json();
         setUnits(uJson.units || []);
-        if (uJson.units && uJson.units.length > 0) {
-          setSelectedUnitId(uJson.units[0].id);
-        }
+        // Mặc định giữ 'ALL' để xem toàn bộ 155 đơn vị và xuất tất cả
       }
     } catch (err) {
       console.error('Lỗi tải dữ liệu tổng hợp:', err);
@@ -365,7 +365,7 @@ export default function AdminTrainingDemandPage() {
 
   // Handle Admin Reopen Submission
   const handleReopen = async () => {
-    if (!selectedUnitId) return;
+    if (!selectedUnitId || selectedUnitId === 'ALL') return;
     if (!confirm('Bạn có chắc chắn muốn mở lại hồ sơ cho đơn vị này chỉnh sửa bổ sung?')) return;
     try {
       setReopenLoading(true);
@@ -1110,10 +1110,13 @@ export default function AdminTrainingDemandPage() {
               <div className="flex-1">
                 <label className="block text-xs font-semibold text-slate-500 mb-1">Chọn Đơn vị ({units.length || 155} đơn vị)</label>
                 <select
-                  value={selectedUnitId || ''}
-                  onChange={(e) => setSelectedUnitId(parseInt(e.target.value))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  value={selectedUnitId || 'ALL'}
+                  onChange={(e) => setSelectedUnitId(e.target.value === 'ALL' ? 'ALL' : parseInt(e.target.value))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
                 >
+                  <option value="ALL" className="font-bold text-emerald-700 bg-emerald-50">
+                    ★ TẤT CẢ ĐƠN VỊ (Toàn mạng lưới {units.length || 155} Đơn vị) ★
+                  </option>
                   {filteredUnitsForSelect.map(u => (
                     <option key={u.id} value={u.id}>
                       [{u.unit_code}] {u.unit_name}
@@ -1124,14 +1127,33 @@ export default function AdminTrainingDemandPage() {
             </div>
 
             <div className="flex items-center gap-2 pt-4 md:pt-0">
-              {selectedUnitId && (
+              {selectedUnitId === 'ALL' ? (
                 <a
-                  href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
-                  className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                  href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
+                  className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition-colors"
+                  title="Xuất file Excel gồm 2 Sheet: Sheet 1 Tổng hợp 155 ĐV, Sheet 2 Chi tiết chuyên đề toàn bộ đơn vị"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Xuất Excel Đơn vị</span>
+                  <span>Xuất Excel Toàn Bộ {units.length || 155} Đơn Vị</span>
                 </a>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
+                    className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Xuất Excel Đơn vị</span>
+                  </a>
+                  <a
+                    href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
+                    className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                    title="Xuất dữ liệu toàn bộ 155 đơn vị"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Xuất Tất cả (155 ĐV)</span>
+                  </a>
+                </div>
               )}
             </div>
           </div>
@@ -1146,10 +1168,199 @@ export default function AdminTrainingDemandPage() {
           {unitReportLoading ? (
             <div className="bg-white p-12 text-center text-slate-500 rounded-xl border border-slate-200">
               <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
-              <span>Đang tải báo cáo của đơn vị...</span>
+              <span>Đang tải dữ liệu {selectedUnitId === 'ALL' ? 'toàn bộ 155 đơn vị...' : 'báo cáo của đơn vị...'}</span>
+            </div>
+          ) : unitReportData?.isAllUnits ? (
+            /* CHẾ ĐỘ XEM TẤT CẢ 155 ĐƠN VỊ */
+            <div className="space-y-4">
+              {/* Thẻ KPI tổng hợp tiến độ toàn mạng lưới */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <p className="text-xs text-slate-500 font-semibold mb-1">Tổng đơn vị</p>
+                  <p className="text-2xl font-black text-slate-800">{unitReportData.stats?.totalUnits || units.length || 155}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Toàn bộ chi nhánh & phòng</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-sm">
+                  <p className="text-xs text-emerald-700 font-semibold mb-1">Đã nộp chính thức</p>
+                  <p className="text-2xl font-black text-emerald-700">{unitReportData.stats?.submittedCount || 0}</p>
+                  <p className="text-[11px] text-emerald-600 mt-1">
+                    {Math.round(((unitReportData.stats?.submittedCount || 0) / (unitReportData.stats?.totalUnits || 155)) * 100)}% hoàn thành
+                  </p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/30 shadow-sm">
+                  <p className="text-xs text-blue-700 font-semibold mb-1">Đang soạn (Bản nháp)</p>
+                  <p className="text-2xl font-black text-blue-700">{unitReportData.stats?.draftCount || 0}</p>
+                  <p className="text-[11px] text-blue-600 mt-1">Đang nhập liệu</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/30 shadow-sm">
+                  <p className="text-xs text-amber-700 font-semibold mb-1">Đang mở lại cho sửa</p>
+                  <p className="text-2xl font-black text-amber-700">{unitReportData.stats?.reopenedCount || 0}</p>
+                  <p className="text-[11px] text-amber-600 mt-1">Chờ nộp lại</p>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-rose-200 bg-rose-50/30 shadow-sm col-span-2 md:col-span-1">
+                  <p className="text-xs text-rose-700 font-semibold mb-1">Chưa gửi hồ sơ</p>
+                  <p className="text-2xl font-black text-rose-700">{unitReportData.stats?.notSubmittedCount || 0}</p>
+                  <p className="text-[11px] text-rose-600 mt-1">Cần đôn đốc</p>
+                </div>
+              </div>
+
+              {/* Bảng tổng hợp toàn bộ 155 đơn vị */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-emerald-600" />
+                      <span>Danh Sách & Tiến Độ Kê Khai Toàn Mạng Lưới (155 Đơn Vị)</span>
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Tổng số lượt người đăng ký đào tạo: <strong className="text-emerald-700 font-bold">{unitReportData.stats?.totalRegistrations?.toLocaleString('vi-VN') || 0} lượt</strong>
+                    </p>
+                  </div>
+
+                  {/* Nút lọc nhanh trạng thái */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => setAllUnitsStatusFilter('ALL')}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors ${allUnitsStatusFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}
+                    >
+                      Tất cả ({unitReportData.unitsReport?.length || 0})
+                    </button>
+                    <button
+                      onClick={() => setAllUnitsStatusFilter('SUBMITTED')}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors ${allUnitsStatusFilter === 'SUBMITTED' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'}`}
+                    >
+                      Đã nộp ({unitReportData.stats?.submittedCount || 0})
+                    </button>
+                    <button
+                      onClick={() => setAllUnitsStatusFilter('DRAFT')}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors ${allUnitsStatusFilter === 'DRAFT' ? 'bg-blue-700 text-white' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}`}
+                    >
+                      Bản nháp ({unitReportData.stats?.draftCount || 0})
+                    </button>
+                    <button
+                      onClick={() => setAllUnitsStatusFilter('NOT_SUBMITTED')}
+                      className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-colors ${allUnitsStatusFilter === 'NOT_SUBMITTED' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800 hover:bg-rose-200'}`}
+                    >
+                      Chưa nộp ({unitReportData.stats?.notSubmittedCount || 0})
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-100 text-slate-700 text-xs font-bold uppercase sticky top-0 z-10 border-b">
+                      <tr>
+                        <th className="py-3 px-3 w-12 text-center">STT</th>
+                        <th className="py-3 px-3 w-24">Mã ĐV</th>
+                        <th className="py-3 px-4">Tên Đơn vị</th>
+                        <th className="py-3 px-3 w-28 text-center">Khu vực</th>
+                        <th className="py-3 px-3 w-36 text-center">Trạng thái hồ sơ</th>
+                        <th className="py-3 px-3 w-28 text-center">Số vị trí</th>
+                        <th className="py-3 px-3 w-28 text-center">Số CĐ</th>
+                        <th className="py-3 px-3 w-32 text-right font-bold text-emerald-800 bg-emerald-50/60">Lượt người ĐK</th>
+                        <th className="py-3 px-3 w-36 text-center">Thời gian nộp</th>
+                        <th className="py-3 px-3 w-28 text-center">Thao tác</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {unitReportData.unitsReport
+                        ?.filter((u: any) => {
+                          if (allUnitsStatusFilter === 'ALL') return true;
+                          if (allUnitsStatusFilter === 'SUBMITTED') return u.status === 'SUBMITTED';
+                          if (allUnitsStatusFilter === 'DRAFT') return u.status === 'DRAFT' || u.status === 'REOPENED';
+                          if (allUnitsStatusFilter === 'NOT_SUBMITTED') return u.status === 'NOT_SUBMITTED';
+                          return true;
+                        })
+                        .filter((u: any) => {
+                          if (!unitSearch) return true;
+                          const s = unitSearch.toLowerCase();
+                          return u.unit_name.toLowerCase().includes(s) || u.unit_code.toLowerCase().includes(s);
+                        })
+                        .map((u: any, idx: number) => (
+                          <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-2.5 px-3 text-center text-xs text-slate-400 font-medium">{idx + 1}</td>
+                            <td className="py-2.5 px-3 font-mono text-xs font-bold text-slate-700">{u.unit_code}</td>
+                            <td className="py-2.5 px-4 font-semibold text-slate-800 text-xs md:text-sm">
+                              {u.unit_name}
+                            </td>
+                            <td className="py-2.5 px-3 text-center text-xs text-slate-500">{u.region || '-'}</td>
+                            <td className="py-2.5 px-3 text-center">
+                              {u.status === 'SUBMITTED' ? (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[11px] font-bold inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3" /> Đã gửi
+                                </span>
+                              ) : u.status === 'DRAFT' ? (
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-[11px] font-semibold">
+                                  Bản nháp
+                                </span>
+                              ) : u.status === 'REOPENED' ? (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[11px] font-semibold">
+                                  Đang sửa
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[11px]">
+                                  Chưa nộp
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-center text-xs text-slate-600 font-medium">
+                              {u.position_count > 0 ? `${u.position_count} vị trí` : '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-center text-xs text-slate-600 font-medium">
+                              {u.topic_count > 0 ? `${u.topic_count} CĐ` : '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-bold text-emerald-700 bg-emerald-50/30 text-xs md:text-sm">
+                              {u.total_registered > 0 ? u.total_registered.toLocaleString('vi-VN') : '0'}
+                            </td>
+                            <td className="py-2.5 px-3 text-center text-xs text-slate-500">
+                              {u.submitted_at ? new Date(u.submitted_at).toLocaleDateString('vi-VN') : '-'}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => setSelectedUnitId(u.id)}
+                                  className="px-2 py-1 bg-slate-100 hover:bg-emerald-600 hover:text-white text-slate-700 rounded text-xs font-semibold transition-colors"
+                                  title="Xem chi tiết các chuyên đề đơn vị này đăng ký"
+                                >
+                                  Xem
+                                </button>
+                                <a
+                                  href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${u.id}`}
+                                  className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                                  title="Xuất file Excel của đơn vị này"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </a>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           ) : unitReportData ? (
+            /* CHẾ ĐỘ XEM CHI TIẾT 1 ĐƠN VỊ CỤ THỂ */
             <div className="space-y-4">
+              {/* Nút quay lại xem toàn bộ 155 đơn vị */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setSelectedUnitId('ALL')}
+                  className="inline-flex items-center gap-1.5 text-xs md:text-sm font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Quay lại xem Toàn bộ {units.length || 155} Đơn vị</span>
+                </button>
+                <a
+                  href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
+                  className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Xuất Excel Toàn Mạng Lưới (155 ĐV)</span>
+                </a>
+              </div>
+
               {/* Unit Info Card */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
@@ -1201,10 +1412,17 @@ export default function AdminTrainingDemandPage() {
 
               {/* Records Table */}
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 bg-slate-50 border-b border-slate-200">
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <h4 className="font-bold text-slate-700 text-sm">
                     Chi tiết các Vị trí và Chuyên đề đã đăng ký ({unitReportData.records?.length || 0} bản ghi)
                   </h4>
+                  <a
+                    href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
+                    className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Tải Excel đơn vị này</span>
+                  </a>
                 </div>
 
                 {unitReportData.records && unitReportData.records.length > 0 ? (
@@ -1691,31 +1909,37 @@ export default function AdminTrainingDemandPage() {
           </div>
 
           {/* Card 4: Báo cáo theo Đơn vị */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          <div className="bg-white p-5 rounded-xl border border-purple-200 shadow-sm flex flex-col justify-between bg-purple-50/20">
             <div>
-              <div className="p-3 bg-purple-100 text-purple-800 rounded-lg w-fit mb-4">
-                <Building2 className="w-6 h-6" />
+              <div className="p-3 bg-purple-600 text-white rounded-lg w-fit mb-3">
+                <Building2 className="w-5 h-5" />
               </div>
-              <h3 className="font-bold text-slate-800 text-base mb-1">
-                4. Theo Đơn vị
+              <h3 className="font-bold text-slate-800 text-sm mb-1">
+                Theo Đơn vị (Toàn bộ / Đơn lẻ)
               </h3>
-              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                Xuất toàn bộ nhu cầu đào tạo của một đơn vị cụ thể theo từng vị trí và chuyên đề.
+              <p className="text-xs text-slate-500 mb-3 leading-relaxed">
+                Xuất toàn bộ nhu cầu đào tạo của toàn mạng lưới 155 đơn vị (gồm 2 Sheet: Tổng hợp & Chi tiết) hoặc một đơn vị cụ thể.
               </p>
             </div>
-            {selectedUnitId ? (
+            <div className="flex flex-col gap-2">
               <a
-                href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
-                className="inline-flex items-center justify-center gap-2 bg-purple-700 hover:bg-purple-800 text-white py-2.5 px-4 rounded-lg text-sm font-semibold transition-colors"
+                href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
+                className="inline-flex items-center justify-center gap-1.5 bg-purple-700 hover:bg-purple-800 text-white py-2 px-3 rounded-lg text-xs font-bold transition-colors shadow-sm"
+                title="Tải toàn bộ dữ liệu 155 đơn vị gồm Sheet 1 Tổng hợp và Sheet 2 Chi tiết"
               >
-                <Download className="w-4 h-4" />
-                <span>Tải Excel Đơn vị</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>Tải Toàn Bộ 155 Đơn Vị</span>
               </a>
-            ) : (
-              <button disabled className="bg-slate-200 text-slate-400 py-2.5 px-4 rounded-lg text-sm font-semibold cursor-not-allowed">
-                Chọn đơn vị tại Tab 3
-              </button>
-            )}
+              {selectedUnitId && selectedUnitId !== 'ALL' && (
+                <a
+                  href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
+                  className="inline-flex items-center justify-center gap-1.5 bg-white hover:bg-purple-100 text-purple-800 border border-purple-300 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Tải riêng ĐV đang chọn</span>
+                </a>
+              )}
+            </div>
           </div>
         </div>
       )}

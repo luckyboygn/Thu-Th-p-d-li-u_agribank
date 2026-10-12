@@ -220,9 +220,83 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 4. BÁO CÁO THEO TỪNG ĐƠN VỊ
+  // 4. BÁO CÁO THEO TỪNG ĐƠN VỊ (HỖ TRỢ CẢ "TẤT CẢ ĐƠN VỊ" VÀ "TỪNG ĐƠN VỊ")
   if (type === 'BY_UNIT') {
     if (!unitIdStr) return NextResponse.json({ error: 'Thiếu unitId.' }, { status: 400 });
+
+    if (unitIdStr === 'ALL') {
+      const allUnits = db.prepare('SELECT id, unit_code, unit_name, region, unit_type FROM units ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC').all() as any[];
+      const submissions = db.prepare(`
+        SELECT ts.id, ts.unit_id, ts.status, ts.submitted_at, ts.updated_at,
+               (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
+               (SELECT COUNT(dt.id) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id AND dt.participant_count > 0) as topic_count,
+               (SELECT COALESCE(SUM(dt.participant_count), 0) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id) as total_participants
+        FROM training_demand_submissions ts
+        WHERE ts.collection_id = ? AND ts.id IN (
+          SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
+        )
+      `).all(collectionId, collectionId) as any[];
+
+      const subMap = new Map<number, any>();
+      submissions.forEach(s => subMap.set(s.unit_id, s));
+
+      const unitsReport = allUnits.map(u => {
+        const sub = subMap.get(u.id);
+        const totalRegistered = sub?.total_participants || 0;
+        return {
+          id: u.id,
+          unitId: u.id,
+          unit_code: u.unit_code,
+          unitCode: u.unit_code,
+          unit_name: u.unit_name,
+          unitName: u.unit_name,
+          region: u.region,
+          unit_type: u.unit_type,
+          unitType: u.unit_type,
+          submission_id: sub?.id || null,
+          submissionId: sub?.id || null,
+          status: sub ? sub.status : 'NOT_SUBMITTED',
+          submitted_at: sub?.submitted_at || null,
+          submittedAt: sub?.submitted_at || null,
+          updated_at: sub?.updated_at || null,
+          updatedAt: sub?.updated_at || null,
+          position_count: sub?.program_count || 0,
+          programCount: sub?.program_count || 0,
+          topic_count: sub?.topic_count || 0,
+          topicCount: sub?.topic_count || 0,
+          total_registered: totalRegistered,
+          totalParticipants: totalRegistered
+        };
+      });
+
+      const submittedCount = unitsReport.filter(u => u.status === 'SUBMITTED').length;
+      const draftCount = unitsReport.filter(u => u.status === 'DRAFT').length;
+      const reopenedCount = unitsReport.filter(u => u.status === 'REOPENED').length;
+      const notSubmittedCount = unitsReport.filter(u => u.status === 'NOT_SUBMITTED').length;
+      const totalRegistrations = unitsReport.reduce((sum, u) => sum + u.total_registered, 0);
+
+      const stats = {
+        totalUnits: allUnits.length,
+        submittedCount,
+        draftCount,
+        reopenedCount,
+        notSubmittedCount,
+        totalRegistrations
+      };
+
+      return NextResponse.json({
+        isAllUnits: true,
+        stats,
+        totalUnits: allUnits.length,
+        submittedCount,
+        draftCount,
+        reopenedCount,
+        notSubmittedCount,
+        totalRegistrations,
+        unitsReport
+      });
+    }
+
     const targetUnitId = parseInt(unitIdStr);
 
     const unit = db.prepare('SELECT id, unit_code, unit_name FROM units WHERE id = ?').get(targetUnitId) as any;
@@ -330,36 +404,120 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // FORMAT C: THEO ĐƠN VỊ
-    if (exportFormat === 'BY_UNIT' && unitIdStr) {
-      const uId = parseInt(unitIdStr);
-      const unit = db.prepare('SELECT unit_code, unit_name FROM units WHERE id = ?').get(uId) as any;
+    // FORMAT C: THEO ĐƠN VỊ (HỖ TRỢ XUẤT TẤT CẢ HOẶC TỪNG ĐƠN VỊ CỤ THỂ)
+    if (exportFormat === 'BY_UNIT') {
+      if (unitIdStr === 'ALL' || !unitIdStr) {
+        // 1. Sheet Chi tiết tất cả chuyên đề của tất cả đơn vị
+        const allDeclaredRows = db.prepare(`
+          SELECT u.unit_code as 'Mã đơn vị',
+                 u.unit_name as 'Tên đơn vị',
+                 u.region as 'Vùng miền',
+                 p.name as 'Khung Chương trình đào tạo',
+                 t.topic_name as 'Tên chuyên đề',
+                 t.delivery_method as 'Hình thức đào tạo',
+                 t.duration as 'Thời lượng đào tạo',
+                 dt.participant_count as 'Số lượng người đăng ký',
+                 CASE 
+                   WHEN ds.status = 'SUBMITTED' THEN 'ĐÃ GỬI CHÍNH THỨC'
+                   WHEN ds.status = 'DRAFT' THEN 'ĐANG SOẠN THẢO'
+                   WHEN ds.status = 'REOPENED' THEN 'MỞ LẠI CHO SỬA'
+                   ELSE 'CHƯA KÊ KHAI'
+                 END as 'Trạng thái bài nộp',
+                 ds.submitted_at as 'Thời gian gửi'
+          FROM training_demand_program_topics dt
+          JOIN training_program_topics t ON dt.program_topic_id = t.id
+          JOIN training_programs p ON t.program_id = p.id
+          JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+          JOIN training_demand_submissions ds ON dp.submission_id = ds.id
+          JOIN units u ON ds.unit_id = u.id
+          WHERE ds.collection_id = ? AND dt.participant_count > 0
+          ORDER BY CAST(u.unit_code AS INTEGER) ASC, u.unit_code ASC, p.display_order ASC, t.display_order ASC
+        `).all(collectionId) as any[];
 
-      const unitRows = db.prepare(`
-        SELECT p.name as 'Khung Chương trình đào tạo',
-               t.topic_name as 'Tên chuyên đề',
-               t.delivery_method as 'Hình thức đào tạo',
-               t.duration as 'Thời lượng đào tạo',
-               dt.participant_count as 'Số lượng người đăng ký'
-        FROM training_demand_program_topics dt
-        JOIN training_program_topics t ON dt.program_topic_id = t.id
-        JOIN training_programs p ON t.program_id = p.id
-        JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-        JOIN training_demand_submissions ds ON dp.submission_id = ds.id
-        WHERE ds.collection_id = ? AND ds.unit_id = ? AND dt.participant_count > 0
-        ORDER BY p.display_order ASC, t.display_order ASC
-      `).all(collectionId, uId);
+        // 2. Sheet Tổng hợp tiến độ toàn bộ 155 đơn vị
+        const allUnits = db.prepare('SELECT id, unit_code, unit_name, region, unit_type FROM units ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC').all() as any[];
+        const submissions = db.prepare(`
+          SELECT ts.id, ts.unit_id, ts.status, ts.submitted_at,
+                 (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
+                 (SELECT COUNT(dt.id) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id AND dt.participant_count > 0) as topic_count,
+                 (SELECT COALESCE(SUM(dt.participant_count), 0) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id) as total_participants
+          FROM training_demand_submissions ts
+          WHERE ts.collection_id = ? AND ts.id IN (
+            SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
+          )
+        `).all(collectionId, collectionId) as any[];
 
-      const ws = xlsx.utils.json_to_sheet(unitRows);
-      xlsx.utils.book_append_sheet(wb, ws, 'Nhu_Cau_Don_Vi');
-      const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        const subMap = new Map<number, any>();
+        submissions.forEach(s => subMap.set(s.unit_id, s));
 
-      return new NextResponse(buf, {
-        headers: {
-          'Content-Disposition': `attachment; filename="Nhu_Cau_Dao_Tao_${unit?.unit_code || uId}.xlsx"`,
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        }
-      });
+        const REGION_LABELS: Record<string, string> = {
+          MIEN_BAC: 'Miền Bắc',
+          MIEN_TRUNG: 'Miền Trung',
+          TAY_NGUYEN: 'Tây Nguyên',
+          MIEN_NAM: 'Miền Nam',
+          HO: 'Trụ sở chính'
+        };
+
+        const summary155Rows = allUnits.map((u, idx) => {
+          const sub = subMap.get(u.id);
+          const st = sub ? (sub.status === 'SUBMITTED' ? 'ĐÃ GỬI CHÍNH THỨC' : sub.status === 'REOPENED' ? 'MỞ LẠI CHO SỬA' : 'ĐANG SOẠN THẢO') : 'CHƯA KÊ KHAI';
+          return {
+            'STT': idx + 1,
+            'Mã đơn vị': u.unit_code,
+            'Tên đơn vị': u.unit_name,
+            'Khu vực': REGION_LABELS[u.region] || u.region || '',
+            'Trạng thái': st,
+            'Số chương trình đã chọn': sub?.program_count || 0,
+            'Số chuyên đề đăng ký': sub?.topic_count || 0,
+            'Tổng số người đăng ký': sub?.total_participants || 0,
+            'Thời gian gửi chính thức': sub?.submitted_at || ''
+          };
+        });
+
+        const wsSummary = xlsx.utils.json_to_sheet(summary155Rows);
+        xlsx.utils.book_append_sheet(wb, wsSummary, 'Tong_Hop_155_Don_Vi');
+
+        const wsDetail = xlsx.utils.json_to_sheet(allDeclaredRows);
+        xlsx.utils.book_append_sheet(wb, wsDetail, 'Chi_Tiet_Tung_Don_Vi');
+
+        const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        return new NextResponse(buf, {
+          headers: {
+            'Content-Disposition': 'attachment; filename="Nhu_Cau_Dao_Tao_Toan_Bo_155_Don_Vi.xlsx"',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          }
+        });
+      } else {
+        const uId = parseInt(unitIdStr);
+        const unit = db.prepare('SELECT unit_code, unit_name FROM units WHERE id = ?').get(uId) as any;
+
+        const unitRows = db.prepare(`
+          SELECT p.name as 'Khung Chương trình đào tạo',
+                 t.topic_name as 'Tên chuyên đề',
+                 t.delivery_method as 'Hình thức đào tạo',
+                 t.duration as 'Thời lượng đào tạo',
+                 dt.participant_count as 'Số lượng người đăng ký'
+          FROM training_demand_program_topics dt
+          JOIN training_program_topics t ON dt.program_topic_id = t.id
+          JOIN training_programs p ON t.program_id = p.id
+          JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+          JOIN training_demand_submissions ds ON dp.submission_id = ds.id
+          WHERE ds.collection_id = ? AND ds.unit_id = ? AND dt.participant_count > 0
+          ORDER BY p.display_order ASC, t.display_order ASC
+        `).all(collectionId, uId);
+
+        const ws = xlsx.utils.json_to_sheet(unitRows);
+        xlsx.utils.book_append_sheet(wb, ws, 'Nhu_Cau_Don_Vi');
+        const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+        return new NextResponse(buf, {
+          headers: {
+            'Content-Disposition': `attachment; filename="Nhu_Cau_Dao_Tao_${unit?.unit_code || uId}.xlsx"`,
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          }
+        });
+      }
     }
   }
 
