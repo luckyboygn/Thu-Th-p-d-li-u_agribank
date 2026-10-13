@@ -25,7 +25,12 @@ import {
   ToggleRight,
   ShieldCheck,
   HelpCircle,
-  ListFilter
+  ListFilter,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 
 interface SummaryData {
@@ -123,6 +128,7 @@ export default function AdminTrainingDemandPage() {
   const [unitSearch, setUnitSearch] = useState('');
   const [unitReportData, setUnitReportData] = useState<any>(null);
   const [unitReportLoading, setUnitReportLoading] = useState(false);
+  const [unitExpandedPrograms, setUnitExpandedPrograms] = useState<Record<number, boolean>>({});
   const [reopenLoading, setReopenLoading] = useState(false);
   const [reopenSuccess, setReopenSuccess] = useState('');
   const [allUnitsStatusFilter, setAllUnitsStatusFilter] = useState<'ALL' | 'SUBMITTED' | 'DRAFT' | 'NOT_SUBMITTED'>('ALL');
@@ -282,6 +288,11 @@ export default function AdminTrainingDemandPage() {
         if (res.ok) {
           const data = await res.json();
           setUnitReportData(data);
+          if (data.declaredPrograms && data.declaredPrograms.length > 0) {
+            const exp: Record<number, boolean> = {};
+            data.declaredPrograms.forEach((p: any) => { exp[p.program_id] = true; });
+            setUnitExpandedPrograms(exp);
+          }
         }
       } catch (err) {
         console.error('Lỗi tải báo cáo đơn vị:', err);
@@ -1340,137 +1351,547 @@ export default function AdminTrainingDemandPage() {
                 </div>
               </div>
             </div>
+          ) : unitReportLoading ? (
+            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 shadow-sm">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-[#005F3E] border-r-transparent mb-3" />
+              <p className="text-sm text-slate-500 font-medium">Đang tải chi tiết hồ sơ khảo sát của đơn vị...</p>
+            </div>
           ) : unitReportData ? (
-            /* CHẾ ĐỘ XEM CHI TIẾT 1 ĐƠN VỊ CỤ THỂ */
-            <div className="space-y-4">
-              {/* Nút quay lại xem toàn bộ 155 đơn vị */}
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setSelectedUnitId('ALL')}
-                  className="inline-flex items-center gap-1.5 text-xs md:text-sm font-bold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span>Quay lại xem Toàn bộ {units.length || 155} Đơn vị</span>
-                </button>
-                <a
-                  href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
-                  className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Xuất Excel Toàn Mạng Lưới (155 ĐV)</span>
-                </a>
-              </div>
+            /* CHẾ ĐỘ XEM CHI TIẾT 1 ĐƠN VỊ CỤ THỂ (THEO KHUNG CHƯƠNG TRÌNH & ĐỀ XUẤT NGOÀI KHUNG) */
+            (() => {
+              const unitDeclaredPrograms = unitReportData.declaredPrograms || [];
+              const unitProposals = unitReportData.proposals || [];
+              const unitPositionRecords = unitReportData.positionRecords || [];
 
-              {/* Unit Info Card */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-lg text-slate-800">
-                      [{unitReportData.unit?.unit_code}] {unitReportData.unit?.unit_name}
-                    </span>
-                    {unitReportData.submission?.status === 'SUBMITTED' ? (
-                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold inline-flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Đã gửi chính thức
-                      </span>
-                    ) : unitReportData.submission?.status === 'DRAFT' ? (
-                      <span className="px-2.5 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
-                        Bản nháp
-                      </span>
-                    ) : unitReportData.submission?.status === 'REOPENED' ? (
-                      <span className="px-2.5 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">
-                        Đang mở lại cho sửa
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">
-                        Chưa gửi hồ sơ
-                      </span>
-                    )}
+              const totalRegisteredParticipants = unitDeclaredPrograms.length > 0
+                ? unitDeclaredPrograms.reduce((sum: number, p: any) => sum + (p.sum_participants || 0), 0)
+                : unitPositionRecords.reduce((sum: number, r: any) => sum + (r.participant_count || 0), 0);
+
+              const totalRegisteredTopics = unitDeclaredPrograms.length > 0
+                ? unitDeclaredPrograms.reduce((sum: number, p: any) => sum + (p.registered_topic_count || 0), 0)
+                : new Set(unitPositionRecords.map((r: any) => r.topic_id)).size;
+
+              // Gom nhóm danh sách chương trình đã kê khai theo Khung / Nhóm lớn (group_name)
+              const groupedUnitPrograms = (() => {
+                const map = new Map<string, any[]>();
+                unitDeclaredPrograms.forEach((p: any) => {
+                  const gName = p.group_name || 'Khác';
+                  if (!map.has(gName)) map.set(gName, []);
+                  map.get(gName)!.push(p);
+                });
+                return Array.from(map.entries()).map(([group_name, programs]) => ({
+                  group_name,
+                  programs,
+                  totalParticipants: programs.reduce((sum: number, p: any) => sum + (p.sum_participants || 0), 0),
+                  totalTopics: programs.reduce((sum: number, p: any) => sum + (p.registered_topic_count || 0), 0)
+                }));
+              })();
+
+              const toggleUnitAccordion = (programId: number) => {
+                setUnitExpandedPrograms(prev => ({
+                  ...prev,
+                  [programId]: !prev[programId]
+                }));
+              };
+
+              const expandAllUnitPrograms = () => {
+                const allOpen: Record<number, boolean> = {};
+                unitDeclaredPrograms.forEach((p: any) => { allOpen[p.program_id] = true; });
+                setUnitExpandedPrograms(allOpen);
+              };
+
+              const collapseAllUnitPrograms = () => {
+                setUnitExpandedPrograms({});
+              };
+
+              const hasAnyData = unitDeclaredPrograms.length > 0 || unitProposals.length > 0 || unitPositionRecords.length > 0;
+
+              return (
+                <div className="space-y-5">
+                  {/* Thanh điều hướng quay lại & xuất báo cáo */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <button
+                      onClick={() => setSelectedUnitId('ALL')}
+                      className="inline-flex items-center gap-2 text-xs md:text-sm font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-xl border border-emerald-200 transition-colors shadow-xs"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>Quay lại xem Toàn bộ {units.length || 155} Đơn vị</span>
+                    </button>
+                    <a
+                      href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
+                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-bold flex items-center gap-1.5 self-start sm:self-auto"
+                    >
+                      <Download className="w-4 h-4 text-blue-600" />
+                      <span>Xuất Excel Toàn Mạng Lưới (155 ĐV)</span>
+                    </a>
                   </div>
-                  {unitReportData.submission && (
-                    <div className="text-xs text-slate-500 mt-1 flex gap-4">
-                      <span>Cập nhật lần cuối: {new Date(unitReportData.submission.updated_at).toLocaleString('vi-VN')}</span>
-                      {unitReportData.submission.submitted_by_name && (
-                        <span>Người gửi: <strong>{unitReportData.submission.submitted_by_name}</strong></span>
+
+                  {/* Thông báo kết quả thao tác (Reopen) nếu có */}
+                  {reopenSuccess && (
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                        <span>{reopenSuccess}</span>
+                      </div>
+                      <button
+                        onClick={() => setReopenSuccess('')}
+                        className="text-emerald-700 hover:text-emerald-900 font-bold px-2 py-0.5 rounded cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Thẻ Thông tin Đơn vị & Hồ sơ khảo sát */}
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="px-2.5 py-1 bg-slate-900 text-white rounded-lg text-xs font-bold font-mono tracking-wide">
+                          {unitReportData.unit?.unit_code}
+                        </span>
+                        <h3 className="font-extrabold text-lg text-slate-900">
+                          {unitReportData.unit?.unit_name}
+                        </h3>
+                        {unitReportData.submission?.status === 'SUBMITTED' ? (
+                          <span className="px-3 py-1 bg-emerald-100 text-emerald-900 rounded-full text-xs font-bold inline-flex items-center gap-1.5 border border-emerald-300">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                            Đã gửi chính thức
+                          </span>
+                        ) : unitReportData.submission?.status === 'DRAFT' ? (
+                          <span className="px-3 py-1 bg-blue-100 text-blue-900 rounded-full text-xs font-bold inline-flex items-center gap-1.5 border border-blue-300">
+                            <Clock className="w-3.5 h-3.5 text-blue-700" />
+                            Bản nháp
+                          </span>
+                        ) : unitReportData.submission?.status === 'REOPENED' ? (
+                          <span className="px-3 py-1 bg-amber-100 text-amber-900 rounded-full text-xs font-bold inline-flex items-center gap-1.5 border border-amber-300">
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                            Đang mở lại cho sửa
+                          </span>
+                        ) : (
+                          <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-medium border border-slate-200">
+                            Chưa gửi hồ sơ
+                          </span>
+                        )}
+                      </div>
+
+                      {unitReportData.submission ? (
+                        <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-5 gap-y-1">
+                          {unitReportData.submission.receipt_code && (
+                            <span className="inline-flex items-center gap-1 font-mono text-emerald-800 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              <FileText className="w-3.5 h-3.5" />
+                              Mã biên nhận: {unitReportData.submission.receipt_code}
+                            </span>
+                          )}
+                          <span>
+                            Cập nhật: <strong>{new Date(unitReportData.submission.updated_at || unitReportData.submission.submitted_at).toLocaleString('vi-VN')}</strong>
+                          </span>
+                          {unitReportData.submission.submitted_by_name && (
+                            <span>
+                              Người gửi: <strong>{unitReportData.submission.submitted_by_name}</strong>
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-400">
+                          Đơn vị chưa tạo dự thảo hoặc chưa nộp dữ liệu trong đợt khảo sát này.
+                        </div>
                       )}
+                    </div>
+
+                    {/* Nút hành động nhanh của Admin */}
+                    <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+                      {unitReportData.submission?.status === 'SUBMITTED' && (
+                        <button
+                          onClick={handleReopen}
+                          disabled={reopenLoading}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                          title="Cho phép đơn vị mở khóa để điều chỉnh, bổ sung số lượng học viên"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>{reopenLoading ? 'Đang mở lại...' : 'Mở lại cho đơn vị sửa (Reopen)'}</span>
+                        </button>
+                      )}
+
+                      {unitReportData.submission && (
+                        <a
+                          href={unitReportData.submission.receipt_code ? `/unit/receipt?code=${unitReportData.submission.receipt_code}` : `/unit/receipt?type=TRAINING_DEMAND&id=${unitReportData.submission.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                          title="Xem biên nhận nộp chính thức có mã vạch và dấu xác nhận điện tử"
+                        >
+                          <FileText className="w-4 h-4" />
+                          <span>Xem biên nhận nộp</span>
+                          <ExternalLink className="w-3 h-3 opacity-80" />
+                        </a>
+                      )}
+
+                      <a
+                        href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
+                        download
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-300 rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                        title="Tải toàn bộ số liệu khảo sát của chi nhánh dưới định dạng Microsoft Excel"
+                      >
+                        <Download className="w-4 h-4 text-[#005F3E]" />
+                        <span>Tải file Excel đơn vị</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* THẺ KPI THỐNG KÊ TỔNG HỢP CỦA ĐƠN VỊ */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Khung Chương Trình</div>
+                        <div className="text-xl font-extrabold text-blue-700 mt-0.5">
+                          {unitDeclaredPrograms.length} <span className="text-xs font-semibold text-slate-500">khung</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+                        <BookOpen className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Chuyên Đề Đăng Ký</div>
+                        <div className="text-xl font-extrabold text-indigo-700 mt-0.5">
+                          {totalRegisteredTopics} <span className="text-xs font-semibold text-slate-500">chuyên đề</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl">
+                        <Layers className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border border-emerald-300 shadow-xs bg-gradient-to-br from-white to-emerald-50/50 flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider">Tổng Lượt Người ĐK</div>
+                        <div className="text-2xl font-black text-[#005F3E] mt-0.5">
+                          {totalRegisteredParticipants.toLocaleString('vi-VN')} <span className="text-xs font-bold text-emerald-800">lượt</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
+                        <Users className="w-5 h-5" />
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Đề Xuất Ngoài Khung</div>
+                        <div className="text-xl font-extrabold text-amber-700 mt-0.5">
+                          {unitProposals.length} <span className="text-xs font-semibold text-slate-500">đề xuất</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl">
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KHU VỰC KHUNG CHƯƠNG TRÌNH ĐÀO TẠO (GIỐNG GIAO DIỆN ĐƠN VỊ NỘP) */}
+                  {unitDeclaredPrograms.length > 0 ? (
+                    <div className="space-y-5">
+                      {/* Tiêu đề & Công cụ mở rộng */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                        <div className="flex items-center gap-2.5">
+                          <h4 className="text-sm md:text-base font-bold text-slate-900">
+                            Khung Chương trình Đào tạo Đơn vị Đã Đăng ký
+                          </h4>
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            {unitDeclaredPrograms.length} chương trình
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={expandAllUnitPrograms}
+                            className="text-xs text-slate-600 hover:text-[#005F3E] font-semibold underline cursor-pointer"
+                          >
+                            Mở tất cả
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={collapseAllUnitPrograms}
+                            className="text-xs text-slate-600 hover:text-[#005F3E] font-semibold underline cursor-pointer"
+                          >
+                            Thu gọn
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Phân nhóm theo Phụ lục */}
+                      {groupedUnitPrograms.map(grp => (
+                        <div key={grp.group_name} className="space-y-3">
+                          {/* Tiêu đề Phân nhóm Phụ lục */}
+                          <div className="flex items-center justify-between pb-2 border-b-2 border-emerald-800/80 bg-slate-100/80 p-3 rounded-xl">
+                            <div className="flex items-center space-x-2">
+                              <span className="w-2.5 h-6 bg-emerald-800 rounded-full" />
+                              <h5 className="text-xs sm:text-sm font-extrabold text-slate-900 tracking-tight">
+                                {grp.group_name}
+                              </h5>
+                            </div>
+                            <div className="flex items-center space-x-3 text-xs">
+                              <span className="font-semibold text-slate-600">
+                                {grp.programs.length} chương trình
+                              </span>
+                              <span className="font-bold text-emerald-900 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
+                                Tổng {grp.totalParticipants.toLocaleString('vi-VN')} người
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Accordion từng Chương trình */}
+                          <div className="space-y-3">
+                            {grp.programs.map((prog: any) => {
+                              const isExpanded = !!unitExpandedPrograms[prog.program_id];
+                              const hasRegistered = prog.sum_participants > 0;
+
+                              return (
+                                <div
+                                  key={prog.demand_program_id || prog.program_id}
+                                  className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden transition-all"
+                                >
+                                  {/* Accordion Header */}
+                                  <div
+                                    onClick={() => toggleUnitAccordion(prog.program_id)}
+                                    className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-white to-emerald-50/20 hover:bg-slate-50/80 cursor-pointer flex flex-wrap items-center justify-between gap-4 select-none"
+                                  >
+                                    <div className="flex items-center space-x-3 flex-1 min-w-[240px]">
+                                      <button
+                                        type="button"
+                                        className="p-1 rounded-lg hover:bg-slate-200 text-slate-500"
+                                      >
+                                        {isExpanded ? (
+                                          <ChevronDown className="w-5 h-5 text-emerald-700" />
+                                        ) : (
+                                          <ChevronRight className="w-5 h-5 text-slate-500" />
+                                        )}
+                                      </button>
+                                      <div>
+                                        <div className="flex items-center space-x-2 mb-1">
+                                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-white font-mono">
+                                            {prog.program_code}
+                                          </span>
+                                          {hasRegistered ? (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                              Đã đăng ký {prog.sum_participants} người
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                              Chưa nhập số lượng
+                                            </span>
+                                          )}
+                                        </div>
+                                        <h5 className="text-sm font-bold text-slate-900 leading-snug">
+                                          {prog.program_name}
+                                        </h5>
+                                        {prog.notes && (
+                                          <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200/80 rounded px-2 py-0.5 mt-1 inline-block">
+                                            <span className="font-bold">Ghi chú của đơn vị:</span> {prog.notes}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center space-x-4">
+                                      <div className="text-right">
+                                        <div className="text-sm font-extrabold text-emerald-800">
+                                          {prog.sum_participants.toLocaleString('vi-VN')} người
+                                        </div>
+                                        <div className="text-xs text-slate-500">
+                                          {prog.registered_topic_count} / {prog.total_available_topics} chuyên đề
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Accordion Body: Bảng chi tiết các chuyên đề */}
+                                  {isExpanded && (
+                                    <div className="border-t border-slate-200 p-0 overflow-x-auto">
+                                      <table className="w-full text-left text-xs">
+                                        <thead className="bg-[#F8F9FA] text-slate-600 font-bold uppercase text-[11px] border-b border-slate-200">
+                                          <tr>
+                                            <th className="px-4 py-3 w-12 text-center">STT</th>
+                                            <th className="px-4 py-3 w-72">Tên chuyên đề</th>
+                                            <th className="px-4 py-3 min-w-[260px]">Đối tượng tham gia</th>
+                                            <th className="px-4 py-3 w-28 text-center">Thời lượng</th>
+                                            <th className="px-4 py-3 w-36 text-center">Hình thức</th>
+                                            <th className="px-5 py-3 w-40 text-right">Số lượng đăng ký</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                          {prog.topics && prog.topics.length > 0 ? (
+                                            prog.topics.map((t: any, idx: number) => (
+                                              <tr
+                                                key={t.demand_topic_id || idx}
+                                                className={`hover:bg-slate-50 transition-colors ${
+                                                  t.participant_count > 0 ? 'bg-emerald-50/20' : ''
+                                                }`}
+                                              >
+                                                <td className="px-4 py-3 text-center text-slate-400 font-medium">
+                                                  {idx + 1}
+                                                </td>
+                                                <td className="px-4 py-3 font-semibold text-slate-900">
+                                                  {t.topic_name}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-600 whitespace-pre-line leading-relaxed">
+                                                  {t.target_audience || '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-700 font-medium text-center">
+                                                  {t.duration || '—'}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-600 text-center">
+                                                  {t.delivery_method || '—'}
+                                                </td>
+                                                <td className="px-5 py-3 text-right">
+                                                  <span
+                                                    className={`inline-block font-extrabold px-3 py-1 rounded-lg text-xs ${
+                                                      t.participant_count > 0
+                                                        ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-200'
+                                                        : 'text-slate-400 bg-slate-100'
+                                                    }`}
+                                                  >
+                                                    {t.participant_count} người
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            ))
+                                          ) : (
+                                            <tr>
+                                              <td colSpan={6} className="p-4 text-center text-slate-400">
+                                                Không có chuyên đề nào trong chương trình này.
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : unitPositionRecords.length > 0 ? (
+                    /* Dữ liệu vị trí cũ (backward compatibility) */
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                      <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                        <h4 className="font-bold text-slate-700 text-sm">
+                          Chi tiết các Vị trí và Chuyên đề đã đăng ký ({unitPositionRecords.length} bản ghi)
+                        </h4>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-slate-100 text-slate-600 text-xs font-bold uppercase border-b">
+                            <tr>
+                              <th className="py-3 px-4 w-12 text-center">STT</th>
+                              <th className="py-3 px-4 w-64">Vị trí / Chức danh</th>
+                              <th className="py-3 px-3 text-center w-36">Tổng nhân sự vị trí</th>
+                              <th className="py-3 px-4">Tên Chuyên đề đào tạo</th>
+                              <th className="py-3 px-3 w-32">Hình thức</th>
+                              <th className="py-3 px-3 w-28 text-center">Thời lượng</th>
+                              <th className="py-3 px-4 w-32 text-right font-bold text-emerald-800 bg-emerald-50">
+                                Số người đăng ký
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200">
+                            {unitPositionRecords.map((r: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-slate-50">
+                                <td className="py-3 px-4 text-center font-medium text-slate-400">{idx + 1}</td>
+                                <td className="py-3 px-4">
+                                  <span className="font-semibold text-slate-800">[{r.position_code}] {r.position_name}</span>
+                                </td>
+                                <td className="py-3 px-3 text-center text-slate-600 font-medium">
+                                  {r.target_headcount || 0} người
+                                </td>
+                                <td className="py-3 px-4 text-slate-800 font-medium">{r.topic_name}</td>
+                                <td className="py-3 px-3 text-xs text-slate-600">{r.delivery_method || 'Trực tiếp'}</td>
+                                <td className="py-3 px-3 text-xs text-center text-slate-600">{r.duration || '02 ngày'}</td>
+                                <td className="py-3 px-4 text-right font-bold text-emerald-700 bg-emerald-50/40">
+                                  <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">
+                                    {r.participant_count}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* ĐỀ XUẤT NGOÀI KHUNG (MỤC 2.8) */}
+                  {unitProposals.length > 0 && (
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="w-5 h-5 text-amber-500" />
+                          <h4 className="text-base font-bold text-slate-900">
+                            Đề xuất nhu cầu ngoài khung chương trình đào tạo
+                          </h4>
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-200">
+                            Mục 2.8
+                          </span>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-500">
+                          {unitProposals.length} đề xuất
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
+                          <thead className="bg-[#F8F9FA] text-slate-700 font-bold uppercase text-[11px] border-b border-slate-200">
+                            <tr>
+                              <th className="px-3 py-3 w-10 text-center">STT</th>
+                              <th className="px-4 py-3 min-w-[220px]">Tên đề xuất chuyên đề / khóa học</th>
+                              <th className="px-4 py-3 min-w-[180px]">Đối tượng tham gia</th>
+                              <th className="px-3 py-3 w-28 text-right font-bold text-emerald-800 bg-emerald-50">Số người dự kiến</th>
+                              <th className="px-3 py-3 w-28 text-center">Thời lượng</th>
+                              <th className="px-4 py-3 min-w-[200px]">Ghi chú / Đề xuất chi tiết</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {unitProposals.map((p: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-3 py-2.5 text-center text-slate-400 font-mono">{idx + 1}</td>
+                                <td className="px-4 py-2.5 font-bold text-slate-900">{p.proposal_name}</td>
+                                <td className="px-4 py-2.5 text-slate-700">{p.target_audience || '—'}</td>
+                                <td className="px-3 py-2.5 text-right font-extrabold text-emerald-800 bg-emerald-50/50">
+                                  {p.participant_count} người
+                                </td>
+                                <td className="px-3 py-2.5 text-center text-slate-700 font-medium">{p.expected_duration || '—'}</td>
+                                <td className="px-4 py-2.5 text-slate-600">{p.notes || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* THÔNG BÁO NẾU ĐƠN VỊ HOÀN TOÀN CHƯA KÊ KHAI GÌ */}
+                  {!hasAnyData && (
+                    <div className="bg-white rounded-2xl p-12 text-center border border-dashed border-slate-300">
+                      <div className="p-4 bg-slate-100 text-slate-500 rounded-full w-16 h-16 mx-auto flex items-center justify-center mb-3">
+                        <BookOpen className="w-8 h-8" />
+                      </div>
+                      <h4 className="text-base font-bold text-slate-800 mb-1">
+                        Đơn vị này chưa đăng ký chuyên đề nào
+                      </h4>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto">
+                        Chi nhánh chưa thực hiện khảo sát hoặc chưa đăng ký chuyên đề nào trong đợt thu thập dữ liệu này.
+                      </p>
                     </div>
                   )}
                 </div>
-
-                {unitReportData.submission?.status === 'SUBMITTED' && (
-                  <div>
-                    <button
-                      onClick={handleReopen}
-                      disabled={reopenLoading}
-                      className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors disabled:opacity-50"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>{reopenLoading ? 'Đang mở lại...' : 'Mở lại cho đơn vị sửa (Reopen)'}</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Records Table */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                  <h4 className="font-bold text-slate-700 text-sm">
-                    Chi tiết các Vị trí và Chuyên đề đã đăng ký ({unitReportData.records?.length || 0} bản ghi)
-                  </h4>
-                  <a
-                    href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
-                    className="text-xs font-semibold text-emerald-700 hover:underline flex items-center gap-1"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Tải Excel đơn vị này</span>
-                  </a>
-                </div>
-
-                {unitReportData.records && unitReportData.records.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-100 text-slate-600 text-xs font-bold uppercase border-b">
-                        <tr>
-                          <th className="py-3 px-4 w-12 text-center">STT</th>
-                          <th className="py-3 px-4 w-64">Vị trí / Chức danh</th>
-                          <th className="py-3 px-3 text-center w-36">Tổng nhân sự vị trí</th>
-                          <th className="py-3 px-4">Tên Chuyên đề đào tạo</th>
-                          <th className="py-3 px-3 w-32">Hình thức</th>
-                          <th className="py-3 px-3 w-28 text-center">Thời lượng</th>
-                          <th className="py-3 px-4 w-32 text-right font-bold text-emerald-800 bg-emerald-50">
-                            Số người đăng ký
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {unitReportData.records.map((r: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-slate-50">
-                            <td className="py-3 px-4 text-center font-medium text-slate-400">{idx + 1}</td>
-                            <td className="py-3 px-4">
-                              <span className="font-semibold text-slate-800">[{r.position_code}] {r.position_name}</span>
-                            </td>
-                            <td className="py-3 px-3 text-center text-slate-600 font-medium">
-                              {r.target_headcount || 0} người
-                            </td>
-                            <td className="py-3 px-4 text-slate-800 font-medium">{r.topic_name}</td>
-                            <td className="py-3 px-3 text-xs text-slate-600">{r.delivery_method || 'Trực tiếp'}</td>
-                            <td className="py-3 px-3 text-xs text-center text-slate-600">{r.duration || '02 ngày'}</td>
-                            <td className="py-3 px-4 text-right font-bold text-emerald-700 bg-emerald-50/40">
-                              <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">
-                                {r.participant_count}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="p-8 text-center text-slate-400">
-                    Đơn vị này chưa đăng ký chuyên đề nào.
-                  </div>
-                )}
-              </div>
-            </div>
+              );
+            })()
           ) : null}
         </div>
       )}

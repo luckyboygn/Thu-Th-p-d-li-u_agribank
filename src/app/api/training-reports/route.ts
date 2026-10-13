@@ -299,14 +299,63 @@ export async function GET(req: NextRequest) {
 
     const targetUnitId = parseInt(unitIdStr);
 
-    const unit = db.prepare('SELECT id, unit_code, unit_name FROM units WHERE id = ?').get(targetUnitId) as any;
+    const unit = db.prepare('SELECT id, unit_code, unit_name, region, unit_type FROM units WHERE id = ?').get(targetUnitId) as any;
     const submission = db.prepare(`
-      SELECT * FROM training_demand_submissions WHERE collection_id = ? AND unit_id = ? ORDER BY version DESC LIMIT 1
+      SELECT ts.*, u.full_name as submitted_by_name
+      FROM training_demand_submissions ts
+      LEFT JOIN users u ON ts.submitted_by = u.id
+      WHERE ts.collection_id = ? AND ts.unit_id = ?
+      ORDER BY ts.version DESC LIMIT 1
     `).get(collectionId, targetUnitId) as any;
 
     if (!submission) {
-      return NextResponse.json({ unit, submission: null, programRecords: [], positionRecords: [] });
+      return NextResponse.json({
+        unit,
+        submission: null,
+        declaredPrograms: [],
+        proposals: [],
+        programRecords: [],
+        positionRecords: [],
+        records: []
+      });
     }
+
+    // 1. Lấy danh sách Khung chương trình đã khai báo (kèm chi tiết chuyên đề)
+    const declaredPrograms = db.prepare(`
+      SELECT dp.id as demand_program_id, dp.program_id, dp.notes, dp.created_at,
+             p.code as program_code, p.name as program_name, p.group_name,
+             (SELECT COUNT(*) FROM training_program_topics WHERE program_id = p.id) as total_available_topics,
+             (SELECT COUNT(*) FROM training_demand_program_topics WHERE demand_program_id = dp.id AND participant_count > 0) as registered_topic_count,
+             (SELECT COALESCE(SUM(participant_count), 0) FROM training_demand_program_topics WHERE demand_program_id = dp.id) as sum_participants
+      FROM training_demand_programs dp
+      JOIN training_programs p ON dp.program_id = p.id
+      WHERE dp.submission_id = ?
+      ORDER BY p.display_order ASC, dp.id ASC
+    `).all(submission.id) as any[];
+
+    const getProgramTopicsStmt = db.prepare(`
+      SELECT dt.id as demand_topic_id, dt.program_topic_id, dt.participant_count,
+             t.topic_name, t.target_audience, t.delivery_method, t.duration, t.display_order
+      FROM training_demand_program_topics dt
+      JOIN training_program_topics t ON dt.program_topic_id = t.id
+      WHERE dt.demand_program_id = ?
+      ORDER BY t.display_order ASC, t.id ASC
+    `);
+
+    const programsWithDetails = declaredPrograms.map(prog => {
+      const topics = getProgramTopicsStmt.all(prog.demand_program_id);
+      return {
+        ...prog,
+        topics
+      };
+    });
+
+    // 1.5. Lấy danh sách Đề xuất ngoài khung của đơn vị (Mục 2.8)
+    const proposals = db.prepare(`
+      SELECT * FROM training_demand_proposals
+      WHERE submission_id = ?
+      ORDER BY id ASC
+    `).all(submission.id) as any[];
 
     const programRecords = db.prepare(`
       SELECT p.id as program_id, p.code as program_code, p.name as program_name, p.group_name,
@@ -332,7 +381,15 @@ export async function GET(req: NextRequest) {
       ORDER BY p.code ASC, t.id ASC
     `).all(submission.id);
 
-    return NextResponse.json({ unit, submission, programRecords, positionRecords });
+    return NextResponse.json({
+      unit,
+      submission,
+      declaredPrograms: programsWithDetails,
+      proposals,
+      programRecords,
+      positionRecords,
+      records: programRecords
+    });
   }
 
   // 5. XUẤT EXCEL CHUẨN
