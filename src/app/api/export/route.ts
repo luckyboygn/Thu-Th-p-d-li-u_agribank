@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
-import { getSessionFromRequest } from '@/lib/auth';
+import { getSessionFromRequest, isCentralAdmin } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import * as xlsx from 'xlsx';
 
@@ -264,7 +264,7 @@ export async function GET(req: NextRequest) {
 
     // 6. XUẤT NHẬT KÝ KIỂM TOÁN (EXPORT AUDIT LOGS)
     if (type === 'audit-logs') {
-      if (session.role !== 'SUPER_ADMIN') {
+      if (!isCentralAdmin(session)) {
         return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền xuất Nhật ký kiểm toán.' }, { status: 403 });
       }
 

@@ -53,7 +53,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           return;
         }
         const data = await res.json();
-        if (data.user.role !== 'SUPER_ADMIN' && data.user.role !== 'VIEWER') {
+        const role = data?.user?.role;
+        const isCentral = ['SUPER_ADMIN', 'ADMIN', 'CENTRAL_ADMIN', 'VIEWER'].includes(role) || (!data?.user?.unitId && !String(role).startsWith('UNIT_'));
+        if (!isCentral) {
           router.push('/unit');
           return;
         }

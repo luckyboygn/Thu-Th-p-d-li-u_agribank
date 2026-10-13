@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
-import { getSessionFromRequest } from '@/lib/auth';
+import { getSessionFromRequest, isCentralAdmin } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const session = getSessionFromRequest(req);
-  if (!session || session.role !== 'SUPER_ADMIN') {
+  if (!session || !isCentralAdmin(session)) {
     return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền xem Audit Log.' }, { status: 403 });
   }
 
