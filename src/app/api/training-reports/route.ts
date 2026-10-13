@@ -493,7 +493,9 @@ export async function GET(req: NextRequest) {
         const unit = db.prepare('SELECT unit_code, unit_name FROM units WHERE id = ?').get(uId) as any;
 
         const unitRows = db.prepare(`
-          SELECT p.name as 'Khung Chương trình đào tạo',
+          SELECT u.unit_code as 'Mã đơn vị',
+                 u.unit_name as 'Tên đơn vị',
+                 p.name as 'Khung Chương trình đào tạo',
                  t.topic_name as 'Tên chuyên đề',
                  t.delivery_method as 'Hình thức đào tạo',
                  t.duration as 'Thời lượng đào tạo',
@@ -503,12 +505,37 @@ export async function GET(req: NextRequest) {
           JOIN training_programs p ON t.program_id = p.id
           JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
           JOIN training_demand_submissions ds ON dp.submission_id = ds.id
+          JOIN units u ON ds.unit_id = u.id
           WHERE ds.collection_id = ? AND ds.unit_id = ? AND dt.participant_count > 0
           ORDER BY p.display_order ASC, t.display_order ASC
         `).all(collectionId, uId);
 
         const ws = xlsx.utils.json_to_sheet(unitRows);
         xlsx.utils.book_append_sheet(wb, ws, 'Nhu_Cau_Don_Vi');
+
+        // Bổ sung Sheet Đề xuất đào tạo ngoài khung (nếu có)
+        try {
+          const proposalRows = db.prepare(`
+            SELECT u.unit_code as 'Mã đơn vị',
+                   u.unit_name as 'Tên đơn vị',
+                   pr.proposal_name as 'Tên chuyên đề / Khóa học đề xuất',
+                   pr.target_audience as 'Đối tượng học viên',
+                   pr.expected_duration as 'Thời lượng dự kiến',
+                   pr.participant_count as 'Số lượng người đăng ký',
+                   pr.notes as 'Ghi chú / Kiến nghị'
+            FROM training_demand_proposals pr
+            JOIN training_demand_submissions ds ON pr.submission_id = ds.id
+            JOIN units u ON ds.unit_id = u.id
+            WHERE ds.collection_id = ? AND ds.unit_id = ? AND pr.participant_count > 0
+            ORDER BY pr.id ASC
+          `).all(collectionId, uId);
+
+          if (proposalRows && proposalRows.length > 0) {
+            const wsProp = xlsx.utils.json_to_sheet(proposalRows);
+            xlsx.utils.book_append_sheet(wb, wsProp, 'De_Xuat_Ngoai_Khung');
+          }
+        } catch (err) {}
+
         const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
         return new NextResponse(buf, {

@@ -13,7 +13,8 @@ import {
   Clock,
   User,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Download
 } from 'lucide-react';
 
 function ReceiptContent() {
@@ -105,13 +106,26 @@ function ReceiptContent() {
           <span>Quay lại</span>
         </button>
 
-        <button
-          onClick={() => window.print()}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95"
-        >
-          <Printer className="w-4 h-4" />
-          <span>In / Xuất PDF Biên nhận</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {!isExam && (
+            <a
+              href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${receipt.unitId}`}
+              download
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-emerald-800 text-xs font-bold rounded-xl shadow-xs transition-colors"
+              title="Tải toàn bộ danh sách dữ liệu khảo sát đào tạo của đơn vị dưới dạng file Excel"
+            >
+              <Download className="w-4 h-4 text-[#005F3E]" />
+              <span>Tải file Excel dữ liệu</span>
+            </a>
+          )}
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white text-xs font-bold rounded-xl shadow-xs transition-all active:scale-95"
+          >
+            <Printer className="w-4 h-4" />
+            <span>In / Xuất PDF Biên nhận</span>
+          </button>
+        </div>
       </div>
 
       {/* TỜ BIÊN NHẬN ĐIỆN TỬ CHUẨN A4 AGRIBANK */}
