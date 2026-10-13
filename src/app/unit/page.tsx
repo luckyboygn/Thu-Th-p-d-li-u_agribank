@@ -156,22 +156,33 @@ function UnitDashboardContent() {
   const [networkStatusFilter, setNetworkStatusFilter] = useState<'ALL' | 'SUBMITTED' | 'DRAFT' | 'ERROR' | 'NOT_YET'>('ALL');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'CANDIDATE_LIST' | 'TRAINING_DEMAND'>('ALL');
 
+  // Kiểm tra xem đợt exam hiện tại có thực chất là đợt khảo sát đào tạo không
+  const isExamActuallyTraining = useMemo(() => {
+    if (!data?.exam) return false;
+    const title = (data.exam.title || '').toLowerCase();
+    const code = (data.exam.code || '').toLowerCase();
+    return title.includes('khảo sát') || title.includes('đào tạo') || title.includes('nhu cầu') || code.startsWith('ks');
+  }, [data?.exam]);
+
   // Xác định nhiệm vụ đợt này từ Admin (CANDIDATE_EXAM, TRAINING_DEMAND, BOTH)
   const activeTaskMode = useMemo<'CANDIDATE_EXAM' | 'TRAINING_DEMAND' | 'BOTH'>(() => {
+    // Nếu đợt thi được tạo thực chất là đợt khảo sát nhu cầu đào tạo -> ưu tiên chế độ TRAINING_DEMAND
+    if (isExamActuallyTraining) return 'TRAINING_DEMAND';
+
     const rawMode = data?.activeCampaignTask || 'AUTO';
     if (rawMode === 'CANDIDATE_EXAM') return 'CANDIDATE_EXAM';
     if (rawMode === 'TRAINING_DEMAND') return 'TRAINING_DEMAND';
     if (rawMode === 'BOTH') return 'BOTH';
 
-    // Chế độ AUTO: Tự động theo trạng thái đợt đang mở
-    const isExamOpen = data?.exam && data.exam.status === 'OPEN';
-    const isTrainingOpen = trainingData?.collection && trainingData.collection.status === 'OPEN';
+    // Chế độ AUTO: Tự động theo trạng thái đợt đang mở thực tế
+    const isExamOpen = Boolean(data?.exam && data.exam.status === 'OPEN');
+    const isTrainingOpen = Boolean(trainingData?.collection && trainingData.collection.status === 'OPEN');
 
     if (isExamOpen && !isTrainingOpen) return 'CANDIDATE_EXAM';
     if (!isExamOpen && isTrainingOpen) return 'TRAINING_DEMAND';
     if (isExamOpen && isTrainingOpen) return 'BOTH';
-    return isExamOpen ? 'CANDIDATE_EXAM' : 'CANDIDATE_EXAM';
-  }, [data?.activeCampaignTask, data?.exam, trainingData?.collection]);
+    return isTrainingOpen ? 'TRAINING_DEMAND' : 'CANDIDATE_EXAM';
+  }, [data?.activeCampaignTask, data?.exam, trainingData?.collection, isExamActuallyTraining]);
 
   const loadData = async (examId?: number, catFilter = categoryFilter) => {
     try {
@@ -840,7 +851,7 @@ function UnitDashboardContent() {
                       </div>
                     ) : (
                       <p className="text-xs text-slate-500 italic py-2">
-                        Đơn vị chưa tiến hành đăng ký nhu cầu đào tạo. Hãy vào trang kê khai để chọn các chuyên đề trong khung và ngoài khung cần đào tạo năm 2026.
+                        Đơn vị chưa tiến hành đăng ký nhu cầu đào tạo. Hãy vào trang kê khai để chọn các chuyên đề trong khung và ngoài khung cần đào tạo cho đợt này.
                       </p>
                     )}
                   </div>
@@ -898,7 +909,11 @@ function UnitDashboardContent() {
             <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
-                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Đã Gửi Khảo Sát' : 'Đã Gửi Danh Sách'}
+                  {activeTaskMode === 'TRAINING_DEMAND'
+                    ? 'Đã Gửi Khảo Sát'
+                    : activeTaskMode === 'CANDIDATE_EXAM'
+                    ? 'Đã Gửi Danh Sách Thi'
+                    : 'Đã Hoàn Tất Kê Khai'}
                 </span>
                 <span className="p-2 bg-emerald-50 rounded-xl text-emerald-700">
                   <CheckCircle2 className="w-4 h-4" />
@@ -908,7 +923,9 @@ function UnitDashboardContent() {
                 <div className="text-2xl sm:text-3xl font-black text-emerald-700">
                   {activeTaskMode === 'TRAINING_DEMAND'
                     ? adminSummary?.trainingSubmittedCount || 0
-                    : adminSummary?.completedUnits || 0}
+                    : activeTaskMode === 'CANDIDATE_EXAM'
+                    ? adminSummary?.completedUnits || 0
+                    : Math.max(adminSummary?.trainingSubmittedCount || 0, adminSummary?.completedUnits || 0)}
                   <span className="text-xs font-normal text-slate-500 ml-1">/ 155 ĐV</span>
                 </div>
                 {/* Progress bar */}
@@ -916,12 +933,12 @@ function UnitDashboardContent() {
                   <div
                     className="bg-emerald-600 h-1.5 rounded-full"
                     style={{
-                      width: `${Math.round(((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100)}%`
+                      width: `${Math.round((((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100))}%`
                     }}
                   ></div>
                 </div>
                 <div className="text-[11px] text-emerald-600 font-semibold mt-1">
-                  Đạt {Math.round(((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100)}% hoàn thành
+                  Đạt {Math.round((((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100))}% hoàn thành
                 </div>
               </div>
             </div>
@@ -930,7 +947,11 @@ function UnitDashboardContent() {
             <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80 flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">
-                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Chưa Gửi / Đang Soạn' : 'Chưa Nộp / Có Lỗi'}
+                  {activeTaskMode === 'TRAINING_DEMAND'
+                    ? 'Chưa Gửi / Đang Soạn'
+                    : activeTaskMode === 'CANDIDATE_EXAM'
+                    ? 'Chưa Nộp / Có Lỗi'
+                    : 'Chưa Gửi / Đang Xử Lý'}
                 </span>
                 <span className="p-2 bg-amber-50 rounded-xl text-amber-700">
                   <Clock className="w-4 h-4" />
@@ -944,7 +965,9 @@ function UnitDashboardContent() {
                   <span className="text-xs font-normal text-slate-500 ml-1">ĐV</span>
                 </div>
                 <div className="text-xs text-slate-400 mt-1">
-                  {activeTaskMode === 'CANDIDATE_EXAM' && (adminSummary?.errorUnits || 0) > 0
+                  {activeTaskMode === 'TRAINING_DEMAND'
+                    ? 'Đang tiếp tục hoàn thiện kê khai'
+                    : (adminSummary?.errorUnits || 0) > 0
                     ? `${adminSummary?.errorUnits} đơn vị còn lỗi đối chiếu`
                     : 'Đang tiếp tục hoàn thiện'}
                 </div>
@@ -955,23 +978,55 @@ function UnitDashboardContent() {
             <div className="bg-gradient-to-br from-[#005F3E] to-emerald-900 text-white rounded-2xl p-5 shadow-xs flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-100 uppercase tracking-wider">
-                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Tổng Nhu Cầu Đào Tạo' : 'Tổng Cán Bộ Dự Thi'}
+                  {activeTaskMode === 'TRAINING_DEMAND'
+                    ? 'Tổng Nhân Sự Đăng Ký Đào Tạo'
+                    : activeTaskMode === 'CANDIDATE_EXAM'
+                    ? 'Tổng Cán Bộ Kê Khai Dự Thi'
+                    : 'Tổng Dữ Liệu Kê Khai'}
                 </span>
                 {activeTaskMode === 'TRAINING_DEMAND' ? (
                   <GraduationCap className="w-5 h-5 text-emerald-200" />
-                ) : (
+                ) : activeTaskMode === 'CANDIDATE_EXAM' ? (
                   <FileSpreadsheet className="w-5 h-5 text-emerald-200" />
+                ) : (
+                  <Layers className="w-5 h-5 text-emerald-200" />
                 )}
               </div>
               <div className="mt-3">
-                <div className="text-2xl sm:text-3xl font-black text-white">
-                  {activeTaskMode === 'TRAINING_DEMAND'
-                    ? (adminSummary?.totalTrainingDemand || 0).toLocaleString('vi-VN')
-                    : (adminSummary?.totalCandidates || 0).toLocaleString('vi-VN')}
-                </div>
-                <div className="text-xs text-emerald-200 mt-0.5">
-                  {activeTaskMode === 'TRAINING_DEMAND' ? 'Lượt người đăng ký toàn hệ thống' : 'Cán bộ kê khai dự thi'}
-                </div>
+                {activeTaskMode === 'TRAINING_DEMAND' ? (
+                  <>
+                    <div className="text-2xl sm:text-3xl font-black text-white">
+                      {(adminSummary?.totalTrainingDemand || 0).toLocaleString('vi-VN')}
+                    </div>
+                    <div className="text-xs text-emerald-200 mt-0.5">
+                      Lượt cán bộ có nhu cầu đào tạo toàn mạng lưới
+                    </div>
+                  </>
+                ) : activeTaskMode === 'CANDIDATE_EXAM' ? (
+                  <>
+                    <div className="text-2xl sm:text-3xl font-black text-white">
+                      {(adminSummary?.totalCandidates || 0).toLocaleString('vi-VN')}
+                    </div>
+                    <div className="text-xs text-emerald-200 mt-0.5">
+                      Cán bộ đăng ký tham gia kỳ thi
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs text-emerald-200">Đào tạo:</span>
+                      <span className="text-lg font-black text-white">
+                        {(adminSummary?.totalTrainingDemand || 0).toLocaleString('vi-VN')} lượt
+                      </span>
+                    </div>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs text-emerald-200">Thi cử:</span>
+                      <span className="text-lg font-black text-white">
+                        {(adminSummary?.totalCandidates || 0).toLocaleString('vi-VN')} cán bộ
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

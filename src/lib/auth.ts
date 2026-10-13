@@ -193,3 +193,30 @@ export function authenticateUser(username: string, password: string): UserSessio
     mustChangePassword: requireChangePassword
   };
 }
+
+/**
+ * Kiểm tra xem session có quyền Quản trị viên Trung tâm (Super Admin / Central Admin) hay không.
+ * Chấp nhận:
+ * - role === 'SUPER_ADMIN'
+ * - role === 'ADMIN'
+ * - role === 'CENTRAL_ADMIN'
+ * - username === 'admin'
+ * - Người dùng không gắn với đơn vị cụ thể (unitId === null) và không phải vai trò cấp đơn vị (UNIT_*) hay VIEWER
+ */
+export function isCentralAdmin(session: UserSession | null): boolean {
+  if (!session) return false;
+  const role = String(session.role || '').toUpperCase();
+  const username = String(session.username || '').toLowerCase();
+
+  if (role === 'SUPER_ADMIN' || role === 'ADMIN' || role === 'CENTRAL_ADMIN') {
+    return true;
+  }
+  if (username === 'admin') {
+    return true;
+  }
+  if (!session.unitId && !role.startsWith('UNIT_') && role !== 'VIEWER') {
+    return true;
+  }
+  return false;
+}
+

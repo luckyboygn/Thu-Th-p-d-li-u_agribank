@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
-import { getSessionFromRequest } from '@/lib/auth';
+import { getSessionFromRequest, isCentralAdmin } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
@@ -21,8 +21,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = getSessionFromRequest(req);
-  if (!session || session.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền tạo kỳ thi.' }, { status: 403 });
+  if (!session) {
+    return NextResponse.json({ error: 'Chưa đăng nhập hoặc phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.' }, { status: 401 });
+  }
+  if (!isCentralAdmin(session)) {
+    return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền tạo đợt thu thập.' }, { status: 403 });
   }
 
   try {
@@ -66,8 +69,11 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const session = getSessionFromRequest(req);
-  if (!session || session.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền cập nhật kỳ thi.' }, { status: 403 });
+  if (!session) {
+    return NextResponse.json({ error: 'Chưa đăng nhập hoặc phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.' }, { status: 401 });
+  }
+  if (!isCentralAdmin(session)) {
+    return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền cập nhật đợt thu thập.' }, { status: 403 });
   }
 
   try {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
-import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
+import { getSessionFromRequest, enforcePasswordPolicy, isCentralAdmin } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { triggerCloudSync } from '@/lib/cloud-sync';
 
@@ -13,9 +13,9 @@ export async function POST(req: NextRequest) {
   const policyBlock = enforcePasswordPolicy(req, session);
   if (policyBlock) return policyBlock;
 
-  // Chỉ SUPER_ADMIN mới có quyền mở lại bài nộp
-  if (session.role !== 'SUPER_ADMIN') {
-    return NextResponse.json({ error: 'Chỉ Quản trị viên cấp cao mới có quyền mở lại bài nộp.' }, { status: 403 });
+  // Chỉ Quản trị viên Trung tâm mới có quyền mở lại bài nộp
+  if (!isCentralAdmin(session)) {
+    return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền mở lại bài nộp.' }, { status: 403 });
   }
 
   try {

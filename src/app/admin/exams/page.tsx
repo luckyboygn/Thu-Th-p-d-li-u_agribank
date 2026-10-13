@@ -100,15 +100,21 @@ export default function AdminExamsPage() {
   }, []);
 
   const handleToggleStatus = async (examId: number, currentStatus: string) => {
+    const isLocking = currentStatus === 'OPEN';
+    const actionLabel = isLocking ? 'KHÓA đợt thu thập (đóng tiếp nhận nộp file)' : 'MỞ LẠI đợt thu thập';
+    if (!confirm(`Bạn có chắc chắn muốn ${actionLabel}?`)) return;
+
     try {
-      const nextStatus = currentStatus === 'OPEN' ? 'CLOSED' : 'OPEN';
+      const nextStatus = isLocking ? 'CLOSED' : 'OPEN';
       const res = await fetch('/api/exams', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ id: examId, status: nextStatus })
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Lỗi cập nhật');
+      setMessage({ type: 'success', text: `Đã ${isLocking ? 'khóa' : 'mở lại'} đợt thu thập thành công!` });
       fetchExams();
     } catch (err: any) {
       alert(err.message);
@@ -127,6 +133,7 @@ export default function AdminExamsPage() {
       const res = await fetch('/api/exams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           code: newExamCode,
           title: newExamTitle,
@@ -176,6 +183,7 @@ export default function AdminExamsPage() {
       const res = await fetch('/api/exams', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           id: editingExam.id,
           startAt: editStartAt ? new Date(editStartAt).toISOString() : null,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
-import { getSessionFromRequest } from '@/lib/auth';
+import { getSessionFromRequest, isCentralAdmin } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 
 // GET: Lấy cấu hình hệ thống
@@ -20,10 +20,13 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ settings });
 }
 
-// POST: Cập nhật cấu hình hệ thống (Chỉ SUPER_ADMIN)
+// POST: Cập nhật cấu hình hệ thống (Chỉ Quản trị viên Trung tâm)
 export async function POST(req: NextRequest) {
   const session = getSessionFromRequest(req);
-  if (!session || session.role !== 'SUPER_ADMIN') {
+  if (!session) {
+    return NextResponse.json({ error: 'Chưa đăng nhập hoặc phiên làm việc đã hết hạn. Vui lòng đăng nhập lại.' }, { status: 401 });
+  }
+  if (!isCentralAdmin(session)) {
     return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền thay đổi cấu hình hệ thống.' }, { status: 403 });
   }
 

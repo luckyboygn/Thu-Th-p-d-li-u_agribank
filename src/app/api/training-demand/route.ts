@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
-import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
+import { getSessionFromRequest, enforcePasswordPolicy, isCentralAdmin } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { isWindowOpen } from '@/lib/deadline';
 import { triggerCloudSync } from '@/lib/cloud-sync';
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   
   let unitId = session.unitId;
   // Admin có thể xem đơn vị cụ thể nếu truyền unitId
-  if (session.role === 'SUPER_ADMIN' && searchParams.get('unitId')) {
+  if (isCentralAdmin(session) && searchParams.get('unitId')) {
     unitId = parseInt(searchParams.get('unitId')!);
   }
 
@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
     const db = getDatabase();
 
     let unitId = session.unitId;
-    if (session.role === 'SUPER_ADMIN' && body.unitId) {
+    if (isCentralAdmin(session) && body.unitId) {
       unitId = body.unitId;
     }
 
@@ -228,10 +228,10 @@ export async function POST(req: NextRequest) {
       }, { status: 403 });
     }
 
-    // REOPEN (Chỉ Admin)
+// REOPEN (Chỉ Admin)
     if (action === 'REOPEN') {
-      if (session.role !== 'SUPER_ADMIN') {
-        return NextResponse.json({ error: 'Chỉ Admin mới có quyền mở lại hồ sơ.' }, { status: 403 });
+      if (!isCentralAdmin(session)) {
+        return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền mở lại hồ sơ.' }, { status: 403 });
       }
       if (submission) {
         db.prepare("UPDATE training_demand_submissions SET status = 'REOPENED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(submission.id);
@@ -244,6 +244,28 @@ export async function POST(req: NextRequest) {
         });
       }
       return NextResponse.json({ success: true, message: 'Đã mở lại hồ sơ cho đơn vị chỉnh sửa.' });
+    }
+
+    // TOGGLE_COLLECTION: Khóa hoặc mở lại đợt khảo sát đào tạo
+    if (action === 'TOGGLE_COLLECTION') {
+      if (!isCentralAdmin(session)) {
+        return NextResponse.json({ error: 'Chỉ Quản trị viên Trung tâm mới có quyền khóa/mở đợt khảo sát.' }, { status: 403 });
+      }
+      const newStatus = coll.status === 'OPEN' ? 'CLOSED' : 'OPEN';
+      db.prepare('UPDATE collections SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newStatus, collectionId);
+      logAudit({
+        userId: session.id,
+        username: session.username,
+        action: 'UPDATE_COLLECTION_STATUS',
+        entityType: 'COLLECTION',
+        entityId: collectionId,
+        details: { collectionId, oldStatus: coll.status, newStatus }
+      });
+      return NextResponse.json({
+        success: true,
+        status: newStatus,
+        message: `Đã ${newStatus === 'CLOSED' ? 'khóa' : 'mở lại'} đợt khảo sát thành công.`
+      });
     }
 
     // SUBMIT_OFFICIAL (Gửi chính thức)

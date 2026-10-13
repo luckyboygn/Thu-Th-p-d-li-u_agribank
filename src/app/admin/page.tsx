@@ -388,8 +388,16 @@ function AdminDashboardContent() {
     document.body.removeChild(link);
   };
 
-  const isTrainingOnly = categoryFilter === 'TRAINING_DEMAND';
-  const isCandidateOnly = categoryFilter === 'CANDIDATE_LIST';
+  const isSelectedExamTraining = useMemo(() => {
+    const ex = exams.find(e => e.id === selectedExamId);
+    if (!ex) return false;
+    const title = (ex.title || '').toLowerCase();
+    const code = (ex.code || '').toLowerCase();
+    return title.includes('khảo sát') || title.includes('đào tạo') || title.includes('nhu cầu') || code.startsWith('ks');
+  }, [exams, selectedExamId]);
+
+  const isTrainingOnly = categoryFilter === 'TRAINING_DEMAND' || activeCampaignTask === 'TRAINING_DEMAND' || isSelectedExamTraining;
+  const isCandidateOnly = categoryFilter === 'CANDIDATE_LIST' || (activeCampaignTask === 'CANDIDATE_EXAM' && !isSelectedExamTraining);
   const isViewer = currentUser?.role === 'VIEWER';
 
   const totalUnits = summary?.totalUnits || unitList.length || 155;
@@ -397,7 +405,7 @@ function AdminDashboardContent() {
     ? summary?.trainingSubmittedCount || 0
     : isCandidateOnly
     ? summary?.completedUnits || summary?.uploadedUnits || 0
-    : summary?.uploadedUnits || summary?.trainingSubmittedCount || 0;
+    : Math.max(summary?.trainingSubmittedCount || 0, summary?.completedUnits || summary?.uploadedUnits || 0);
 
   const pendingCount = totalUnits - submittedCount;
   const errorCount = isTrainingOnly ? 0 : summary?.errorUnits || 0;
@@ -548,7 +556,9 @@ function AdminDashboardContent() {
         {/* Card 2: Đã nộp dữ liệu */}
         <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Đã Gửi Dữ liệu</span>
+            <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+              {isTrainingOnly ? 'Đã Gửi Khảo Sát' : isCandidateOnly ? 'Đã Gửi Danh Sách' : 'Đã Gửi Dữ Liệu'}
+            </span>
             <span className="p-2 bg-emerald-50 rounded-xl text-emerald-700">
               <CheckCircle2 className="w-4 h-4" />
             </span>
@@ -564,7 +574,9 @@ function AdminDashboardContent() {
         {/* Card 3: Chưa nộp */}
         <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Chưa Gửi Hồ sơ</span>
+            <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">
+              {isTrainingOnly ? 'Chưa Gửi / Đang Soạn' : 'Chưa Gửi Hồ Sơ'}
+            </span>
             <span className="w-6 h-6 rounded-full bg-amber-500 text-slate-950 text-[11px] font-black flex items-center justify-center shadow-xs">
               {pendingCount}
             </span>
@@ -572,23 +584,25 @@ function AdminDashboardContent() {
           <div className="mt-4">
             <div className="text-3xl font-black text-amber-700">{pendingCount}</div>
             <div className="text-xs text-slate-400 mt-1">
-              {draftCount > 0 ? `${draftCount} đơn vị đang soạn thảo` : 'Đang chờ nộp hồ sơ'}
+              {isTrainingOnly
+                ? draftCount > 0 ? `${draftCount} đơn vị đang soạn thảo` : 'Đang tiếp tục hoàn thiện kê khai'
+                : draftCount > 0 ? `${draftCount} đơn vị đang soạn thảo` : 'Đang chờ nộp hồ sơ'}
             </div>
           </div>
         </div>
 
         {/* Card 4: Có lỗi hoặc Tổng nhu cầu */}
         {isTrainingOnly ? (
-          <div className="bg-teal-900 text-white rounded-2xl p-5 shadow-md flex flex-col justify-between">
+          <div className="bg-gradient-to-br from-teal-800 to-emerald-950 text-white rounded-2xl p-5 shadow-md flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-teal-200 uppercase tracking-wider">Tổng Đăng ký Học</span>
+              <span className="text-xs font-bold text-teal-200 uppercase tracking-wider">Tổng Đăng Ký Đào Tạo</span>
               <GraduationCap className="w-5 h-5 text-teal-300" />
             </div>
             <div className="mt-4">
               <div className="text-3xl font-black text-white">
                 {(summary?.totalTrainingDemand || 0).toLocaleString('vi-VN')}
               </div>
-              <div className="text-xs text-teal-200 mt-1">Lượt cán bộ có nhu cầu</div>
+              <div className="text-xs text-teal-200 mt-1">Lượt cán bộ có nhu cầu toàn mạng lưới</div>
             </div>
           </div>
         ) : (
