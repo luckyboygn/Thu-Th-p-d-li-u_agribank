@@ -534,6 +534,12 @@ export default function UnitTrainingDemandPage() {
       return;
     }
 
+    if (totalRegisteredParticipants <= 0) {
+      setActionMessage({ type: 'error', text: 'Tổng số lượt học viên đăng ký đang bằng 0. Vui lòng nhập số lượng học viên tham gia các chuyên đề trước khi gửi chính thức.' });
+      setShowSubmitModal(false);
+      return;
+    }
+
     try {
       setSubmitting(true);
       const res = await fetch('/api/training-demand', {
@@ -1331,11 +1337,23 @@ export default function UnitTrainingDemandPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Tổng số lượt người đăng ký:</span>
-                  <span className="font-bold text-emerald-800 text-sm">
+                  <span className={`font-bold text-sm ${totalRegisteredParticipants > 0 ? 'text-emerald-800' : 'text-rose-600'}`}>
                     {totalRegisteredParticipants.toLocaleString()} lượt người
                   </span>
                 </div>
               </div>
+
+              {totalRegisteredParticipants <= 0 && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-900 rounded-xl space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-xs text-rose-700">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span>Chưa có học viên nào được đăng ký!</span>
+                  </div>
+                  <p className="text-[11px] text-rose-700 leading-relaxed">
+                    Bạn chưa nhập số lượng cán bộ cho bất kỳ chuyên đề đào tạo nào. Vui lòng quay lại mở chương trình và điền số lượng học viên trước khi gửi chính thức.
+                  </p>
+                </div>
+              )}
 
               <div className="p-3.5 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl space-y-1">
                 <div className="font-bold flex items-center gap-1.5">
@@ -1360,8 +1378,8 @@ export default function UnitTrainingDemandPage() {
               <button
                 type="button"
                 onClick={handleConfirmSubmitOfficial}
-                disabled={submitting}
-                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                disabled={submitting || totalRegisteredParticipants <= 0}
+                className="px-5 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
               >
                 {submitting ? (
                   <>

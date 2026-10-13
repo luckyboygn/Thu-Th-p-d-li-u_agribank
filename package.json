@@ -16,6 +16,7 @@
     "test:deadlines": "npx tsx scripts/test_deadlines_suite.ts",
     "test:users": "npx tsx scripts/test_user_unit_management.ts",
     "test:receipts": "npx tsx scripts/test_receipt_generation_suite.ts",
+    "test:receipt-fix": "npx tsx scripts/test_receipt_participants_suite.ts",
     "test:hierarchy": "npx tsx scripts/test_unit_hierarchy_suite.ts",
     "test:master-lifecycle": "npx tsx scripts/test_master_db_lifecycle_suite.ts",
     "test:audit-logs": "npx tsx scripts/test_audit_logs_suite.ts",

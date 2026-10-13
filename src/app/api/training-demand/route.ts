@@ -281,17 +281,21 @@ export async function POST(req: NextRequest) {
       if (!submission) {
         return NextResponse.json({ error: 'Chưa có dữ liệu khai báo để gửi.' }, { status: 400 });
       }
-      // Tính tổng số lượt người đăng ký
-      const sumTopicsRow = db.prepare(`
-        SELECT COALESCE(SUM(t.participant_count), 0) as total
-        FROM training_demand_topics t
-        JOIN training_demand_positions p ON t.demand_position_id = p.id
-        WHERE p.submission_id = ?
-      `).get(submission.id) as any;
-      const totalParticipants = sumTopicsRow?.total || 0;
+
+      // Tính tổng số lượt người đăng ký chuẩn xác (Khung chương trình + Đề xuất ngoài khung + Vị trí chức danh)
+      const { calculateTrainingDemandParticipants, getTrainingDemandProgramsSummary, createSubmissionReceipt } = await import('@/lib/receipt');
+      const totalParticipants = calculateTrainingDemandParticipants(db, submission.id);
+
+      if (totalParticipants <= 0) {
+        return NextResponse.json({
+          error: 'Tổng số lượt học viên đăng ký đang bằng 0. Vui lòng nhập số lượng học viên tham gia các chuyên đề trước khi gửi chính thức.'
+        }, { status: 400 });
+      }
+
+      // Lấy tóm tắt các chương trình đã kê khai
+      const programsSummary = getTrainingDemandProgramsSummary(db, submission.id);
 
       // Sinh mã biên nhận điện tử duy nhất
-      const { createSubmissionReceipt } = await import('@/lib/receipt');
       const collRow = db.prepare('SELECT title FROM collections WHERE id = ?').get(collectionId) as any;
       const receiptCode = createSubmissionReceipt(db, {
         targetType: 'TRAINING_DEMAND',
@@ -302,7 +306,8 @@ export async function POST(req: NextRequest) {
         totalRecords: totalParticipants,
         metadata: {
           title: collRow?.title || 'Khảo sát Nhu cầu Đào tạo',
-          totalParticipants
+          totalParticipants,
+          programsSummary
         }
       });
 

@@ -199,6 +199,53 @@ function ReceiptContent() {
             </div>
           </div>
 
+          {/* Phụ lục danh mục chương trình đào tạo nếu có */}
+          {!isExam && Array.isArray(receipt.metadata?.programsSummary) && receipt.metadata.programsSummary.length > 0 && (
+            <div className="space-y-2">
+              <div className="font-bold text-slate-800 text-xs uppercase tracking-wide flex items-center justify-between">
+                <span>Phụ lục: Danh mục chương trình đào tạo đã đăng ký</span>
+                <span className="text-[11px] text-slate-500 font-normal">
+                  ({receipt.metadata.programsSummary.length} chương trình)
+                </span>
+              </div>
+              <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 text-left border-b border-slate-200 text-[11px]">
+                      <th className="py-2 px-3 font-semibold w-10 text-center">STT</th>
+                      <th className="py-2 px-3 font-semibold">Tên Khung Chương trình Đào tạo</th>
+                      <th className="py-2 px-3 font-semibold text-center w-28">Số chuyên đề</th>
+                      <th className="py-2 px-3 font-semibold text-right w-36">Lượt đăng ký</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {receipt.metadata.programsSummary.map((prog: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-slate-50/50">
+                        <td className="py-2 px-3 text-center text-slate-500 font-mono text-[11px]">{idx + 1}</td>
+                        <td className="py-2 px-3">
+                          <div className="font-semibold text-slate-800">{prog.programName}</div>
+                          {prog.groupName && <div className="text-[10px] text-slate-400">{prog.groupName}</div>}
+                        </td>
+                        <td className="py-2 px-3 text-center text-slate-600 font-mono text-[11px]">{prog.topicCount}</td>
+                        <td className="py-2 px-3 text-right font-bold text-[#005F3E] text-xs">
+                          {Number(prog.participants).toLocaleString()} <span className="font-normal text-[10px] text-slate-500">lượt</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 font-bold border-t border-slate-200 text-slate-900">
+                      <td colSpan={3} className="py-2.5 px-3 text-right text-xs uppercase">Tổng cộng:</td>
+                      <td className="py-2.5 px-3 text-right text-[#005F3E] text-xs font-black">
+                        {Number(receipt.totalRecords).toLocaleString()} lượt
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Dấu kiểm tra bảo mật (Checksum & Verification) */}
           <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200 flex items-center justify-between">
             <div className="space-y-1">

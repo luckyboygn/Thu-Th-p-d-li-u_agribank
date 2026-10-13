@@ -1,6 +1,14 @@
 import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
 
+export interface TrainingProgramSummaryItem {
+  programName: string;
+  programCode: string;
+  groupName?: string;
+  topicCount: number;
+  participants: number;
+}
+
 export interface ReceiptInfo {
   receiptCode: string;
   targetType: 'EXAM_UPLOAD' | 'TRAINING_DEMAND';
@@ -17,6 +25,86 @@ export interface ReceiptInfo {
   totalRecords: number;
   checksum: string;
   metadata?: Record<string, any>;
+}
+
+/**
+ * Tính tổng số lượt học viên đăng ký nhu cầu đào tạo từ toàn bộ các nguồn dữ liệu:
+ * 1. Khung chương trình đào tạo (training_demand_programs + training_demand_program_topics)
+ * 2. Đề xuất ngoài khung (training_demand_proposals)
+ * 3. Vị trí chức danh (training_demand_positions + training_demand_topics - dữ liệu cũ nếu có)
+ */
+export function calculateTrainingDemandParticipants(db: DatabaseSync, submissionId: number): number {
+  if (!submissionId) return 0;
+
+  // 1. Từ Khung chương trình đào tạo (Nguồn chính hiện tại)
+  let progTotal = 0;
+  try {
+    const progRow = db.prepare(`
+      SELECT COALESCE(SUM(dt.participant_count), 0) as total
+      FROM training_demand_program_topics dt
+      JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+      WHERE dp.submission_id = ?
+    `).get(submissionId) as any;
+    progTotal = Number(progRow?.total || 0);
+  } catch (e) {}
+
+  // 2. Từ Đề xuất đào tạo ngoài khung (Mục 2.8)
+  let propTotal = 0;
+  try {
+    const propRow = db.prepare(`
+      SELECT COALESCE(SUM(participant_count), 0) as total
+      FROM training_demand_proposals
+      WHERE submission_id = ?
+    `).get(submissionId) as any;
+    propTotal = Number(propRow?.total || 0);
+  } catch (e) {}
+
+  // 3. Từ Vị trí chức danh (Bản ghi cũ nếu có)
+  let posTotal = 0;
+  try {
+    const posRow = db.prepare(`
+      SELECT COALESCE(SUM(t.participant_count), 0) as total
+      FROM training_demand_topics t
+      JOIN training_demand_positions p ON t.demand_position_id = p.id
+      WHERE p.submission_id = ?
+    `).get(submissionId) as any;
+    posTotal = Number(posRow?.total || 0);
+  } catch (e) {}
+
+  return progTotal + propTotal + posTotal;
+}
+
+/**
+ * Lấy danh sách tóm tắt các chương trình đào tạo đã kê khai để đưa vào biên nhận
+ */
+export function getTrainingDemandProgramsSummary(
+  db: DatabaseSync,
+  submissionId: number
+): TrainingProgramSummaryItem[] {
+  if (!submissionId) return [];
+  try {
+    const rows = db.prepare(`
+      SELECT p.name as program_name, p.code as program_code, p.group_name,
+             COALESCE(SUM(dt.participant_count), 0) as participants,
+             COUNT(CASE WHEN dt.participant_count > 0 THEN 1 END) as topic_count
+      FROM training_demand_programs dp
+      JOIN training_programs p ON dp.program_id = p.id
+      LEFT JOIN training_demand_program_topics dt ON dt.demand_program_id = dp.id
+      WHERE dp.submission_id = ?
+      GROUP BY p.id
+      ORDER BY p.id ASC
+    `).all(submissionId) as any[];
+
+    return rows.map(r => ({
+      programName: r.program_name || '',
+      programCode: r.program_code || '',
+      groupName: r.group_name || '',
+      topicCount: Number(r.topic_count || 0),
+      participants: Number(r.participants || 0)
+    }));
+  } catch (e) {
+    return [];
+  }
 }
 
 /**
@@ -86,6 +174,8 @@ export function createSubmissionReceipt(
 
 /**
  * Tra cứu thông tin biên nhận đầy đủ theo receiptCode
+ * Có cơ chế tự động bù đắp (Self-healing / Fallback): Nếu biên nhận đã sinh trước đó
+ * bị lưu sai số lượng (0 lượt), hệ thống tự động tính lại từ dữ liệu thực tế và cập nhật lại DB.
  */
 export function getReceiptByCode(db: DatabaseSync, receiptCode: string): ReceiptInfo | null {
   const r = db.prepare(`
@@ -107,6 +197,48 @@ export function getReceiptByCode(db: DatabaseSync, receiptCode: string): Receipt
     meta = r.metadata ? JSON.parse(r.metadata) : {};
   } catch (e) {}
 
+  let totalRecords = Number(r.total_records || 0);
+
+  // Tự động kiểm tra và phục hồi số lượng chính xác cho TRAINING_DEMAND
+  if (r.target_type === 'TRAINING_DEMAND') {
+    const actualParticipants = calculateTrainingDemandParticipants(db, r.target_id);
+    const summary = getTrainingDemandProgramsSummary(db, r.target_id);
+
+    let needsDbUpdate = false;
+
+    if (actualParticipants > 0 && totalRecords <= 0) {
+      totalRecords = actualParticipants;
+      meta.totalParticipants = actualParticipants;
+      needsDbUpdate = true;
+    } else if (actualParticipants > 0 && totalRecords !== actualParticipants) {
+      totalRecords = actualParticipants;
+      meta.totalParticipants = actualParticipants;
+      needsDbUpdate = true;
+    }
+
+    if (!meta.programsSummary && summary.length > 0) {
+      meta.programsSummary = summary;
+      needsDbUpdate = true;
+    }
+
+    if (needsDbUpdate) {
+      try {
+        db.prepare('UPDATE submission_receipts SET total_records = ?, metadata = ? WHERE id = ?')
+          .run(totalRecords, JSON.stringify(meta), r.id);
+      } catch (err) {}
+    }
+  } else if (r.target_type === 'EXAM_UPLOAD') {
+    if (totalRecords <= 0) {
+      try {
+        const upload = db.prepare('SELECT total_rows FROM exam_uploads WHERE id = ?').get(r.target_id) as any;
+        if (upload?.total_rows > 0) {
+          totalRecords = upload.total_rows;
+          db.prepare('UPDATE submission_receipts SET total_records = ? WHERE id = ?').run(totalRecords, r.id);
+        }
+      } catch (err) {}
+    }
+  }
+
   return {
     receiptCode: r.receipt_code,
     targetType: r.target_type,
@@ -120,7 +252,7 @@ export function getReceiptByCode(db: DatabaseSync, receiptCode: string): Receipt
     submittedByName: r.submitted_by_name || 'Cán bộ đơn vị',
     approvedBy: r.approved_by,
     approvedByName: r.approved_by_name || 'Lãnh đạo phê duyệt',
-    totalRecords: r.total_records,
+    totalRecords: totalRecords,
     checksum: r.receipt_code.split('-').pop() || '',
     metadata: meta
   };
@@ -174,8 +306,7 @@ export function getReceiptByTarget(
     return getReceiptByCode(db, code);
   } else {
     const sub = db.prepare(`
-      SELECT tds.*, c.title as collection_title,
-             (SELECT COUNT(*) FROM training_demand_program_topics WHERE demand_submission_id = tds.id) as total_topics
+      SELECT tds.*, c.title as collection_title
       FROM training_demand_submissions tds
       LEFT JOIN collections c ON tds.collection_id = c.id
       WHERE tds.id = ?
@@ -183,16 +314,21 @@ export function getReceiptByTarget(
 
     if (!sub || sub.status !== 'SUBMITTED') return null;
 
+    const totalParticipants = calculateTrainingDemandParticipants(db, sub.id);
+    const summary = getTrainingDemandProgramsSummary(db, sub.id);
+
     const code = createSubmissionReceipt(db, {
       targetType: 'TRAINING_DEMAND',
       targetId: sub.id,
       unitId: sub.unit_id,
       submittedBy: sub.submitted_by || 1,
       approvedBy: sub.approved_by || sub.submitted_by,
-      totalRecords: sub.total_topics || 0,
+      totalRecords: totalParticipants,
       metadata: {
         title: sub.collection_title || 'Khảo sát nhu cầu đào tạo',
-        version: sub.version
+        version: sub.version,
+        totalParticipants,
+        programsSummary: summary
       }
     });
 
@@ -200,4 +336,3 @@ export function getReceiptByTarget(
     return getReceiptByCode(db, code);
   }
 }
-
