@@ -406,7 +406,10 @@ export async function GET(req: NextRequest) {
 
     // FORMAT C: THEO ĐƠN VỊ (HỖ TRỢ XUẤT TẤT CẢ HOẶC TỪNG ĐƠN VỊ CỤ THỂ)
     if (exportFormat === 'BY_UNIT') {
-      if (unitIdStr === 'ALL' || !unitIdStr) {
+      const isUnitRole = ['UNIT_ADMIN', 'UNIT_PREPARER', 'UNIT_APPROVER'].includes(session.role);
+      const effectiveUnitIdStr = isUnitRole ? String(session.unitId) : unitIdStr;
+
+      if (effectiveUnitIdStr === 'ALL' || !effectiveUnitIdStr) {
         // 1. Sheet Chi tiết tất cả chuyên đề của tất cả đơn vị
         const allDeclaredRows = db.prepare(`
           SELECT u.unit_code as 'Mã đơn vị',
@@ -489,7 +492,7 @@ export async function GET(req: NextRequest) {
           }
         });
       } else {
-        const uId = parseInt(unitIdStr);
+        const uId = parseInt(effectiveUnitIdStr);
         const unit = db.prepare('SELECT unit_code, unit_name FROM units WHERE id = ?').get(uId) as any;
 
         const unitRows = db.prepare(`

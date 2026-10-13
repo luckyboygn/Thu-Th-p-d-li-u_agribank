@@ -28,7 +28,8 @@ import {
   Lock,
   Edit3,
   RefreshCw,
-  FileText
+  FileText,
+  Download
 } from 'lucide-react';
 import DeadlineBanner from '@/components/DeadlineBanner';
 
@@ -694,6 +695,15 @@ export default function UnitTrainingDemandPage() {
                     <FileText className="w-3.5 h-3.5" />
                     <span>Xem biên nhận</span>
                   </Link>
+                  <a
+                    href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${data?.unit?.id || currentUser?.unitId}&collectionId=${data?.collection?.id || 1}`}
+                    download
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 shadow-xs transition-colors"
+                    title="Tải toàn bộ dữ liệu khảo sát đào tạo của đơn vị dưới dạng file Excel"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#005F3E]" />
+                    <span>Tải Excel</span>
+                  </a>
                 </div>
               ) : isSubmissionReopened ? (
                 <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
@@ -838,14 +848,25 @@ export default function UnitTrainingDemandPage() {
               )}
 
               {isSubmitted && (
-                <Link
-                  href={data?.submission?.receipt_code ? `/unit/receipt?code=${data.submission.receipt_code}` : `/unit/receipt?type=TRAINING_DEMAND&id=${data?.submission?.id}`}
-                  target="_blank"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Xem biên nhận nộp</span>
-                </Link>
+                <>
+                  <Link
+                    href={data?.submission?.receipt_code ? `/unit/receipt?code=${data.submission.receipt_code}` : `/unit/receipt?type=TRAINING_DEMAND&id=${data?.submission?.id}`}
+                    target="_blank"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Xem biên nhận nộp</span>
+                  </Link>
+                  <a
+                    href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${data?.unit?.id || currentUser?.unitId}&collectionId=${data?.collection?.id || 1}`}
+                    download
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95"
+                    title="Tải toàn bộ dữ liệu khảo sát đào tạo của đơn vị dưới dạng file Excel"
+                  >
+                    <Download className="w-4 h-4 text-[#005F3E]" />
+                    <span>Tải file Excel</span>
+                  </a>
+                </>
               )}
 
               {declaredPrograms.length > 0 && (
@@ -1281,15 +1302,26 @@ export default function UnitTrainingDemandPage() {
             )}
 
             {isSubmitted && (
-              <Link
-                href={data?.submission?.receipt_code ? `/unit/receipt?code=${data.submission.receipt_code}` : `/unit/receipt?type=TRAINING_DEMAND&id=${data?.submission?.id}`}
-                target="_blank"
-                className="px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-1.5"
-                title="Mở hoặc in Tờ biên nhận khảo sát đào tạo điện tử"
-              >
-                <FileText className="w-4 h-4" />
-                <span>Xem biên nhận điện tử</span>
-              </Link>
+              <>
+                <Link
+                  href={data?.submission?.receipt_code ? `/unit/receipt?code=${data.submission.receipt_code}` : `/unit/receipt?type=TRAINING_DEMAND&id=${data?.submission?.id}`}
+                  target="_blank"
+                  className="px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  title="Mở hoặc in Tờ biên nhận khảo sát đào tạo điện tử"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Xem biên nhận điện tử</span>
+                </Link>
+                <a
+                  href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${data?.unit?.id || currentUser?.unitId}&collectionId=${data?.collection?.id || 1}`}
+                  download
+                  className="px-4 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-emerald-800 rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-1.5"
+                  title="Tải toàn bộ dữ liệu khảo sát về máy dưới dạng file Excel"
+                >
+                  <Download className="w-4 h-4 text-[#005F3E]" />
+                  <span>Tải file Excel</span>
+                </a>
+              </>
             )}
 
             {isReadOnly && !isSubmitted && (
