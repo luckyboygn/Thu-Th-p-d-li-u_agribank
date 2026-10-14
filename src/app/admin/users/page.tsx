@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Users,
   Search,
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   X
 } from 'lucide-react';
+import { UnitsManagementView } from '@/components/admin/UnitsManagementView';
 
 interface UserItem {
   id: number;
@@ -39,7 +41,16 @@ interface UnitItem {
   unit_name: string;
 }
 
-export default function AdminUsersPage() {
+function AdminUsersContent() {
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<'users' | 'units'>(tabParam === 'units' ? 'units' : 'users');
+
+  useEffect(() => {
+    if (tabParam === 'units') setActiveTab('units');
+    else if (tabParam === 'users') setActiveTab('users');
+  }, [tabParam]);
+
   const [users, setUsers] = useState<UserItem[]>([]);
   const [units, setUnits] = useState<UnitItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -245,8 +256,38 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Tab Switcher */}
+      <div className="flex border-b border-slate-200 gap-2 bg-white p-2 rounded-xl shadow-xs">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'users'
+              ? 'bg-[#005F3E] text-white shadow-xs'
+              : 'bg-transparent text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          <span>Quản lý tài khoản</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('units')}
+          className={`px-4 py-2 text-xs md:text-sm font-bold rounded-lg transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'units'
+              ? 'bg-[#005F3E] text-white shadow-xs'
+              : 'bg-transparent text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>Danh mục & Phân cấp đơn vị</span>
+        </button>
+      </div>
+
+      {activeTab === 'units' ? (
+        <UnitsManagementView />
+      ) : (
+        <div className="space-y-6">
+          {/* Top Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-extrabold text-[#005F3E] flex items-center gap-2.5">
             <Users className="w-6 h-6 text-[#005F3E]" />
@@ -724,6 +765,16 @@ export default function AdminUsersPage() {
           </div>
         </div>
       )}
+        </div>
+      )}
     </div>
+  );
+}
+
+export default function AdminUsersPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-xs text-slate-500">Đang tải dữ liệu...</div>}>
+      <AdminUsersContent />
+    </Suspense>
   );
 }

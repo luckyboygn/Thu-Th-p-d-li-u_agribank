@@ -20,7 +20,6 @@ import {
   GraduationCap,
   Eye,
   Users,
-  Building2,
   HardDrive,
   UserPlus
 } from 'lucide-react';
@@ -141,13 +140,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       title: 'Quản lý tài khoản',
       href: '/admin/users',
       icon: Users,
-      exact: false,
-      hasChevron: false,
-    },
-    {
-      title: 'Quản lý đơn vị',
-      href: '/admin/units',
-      icon: Building2,
       exact: false,
       hasChevron: false,
     },
