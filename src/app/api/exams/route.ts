@@ -9,12 +9,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Chưa đăng nhập.' }, { status: 401 });
   }
 
+  const { searchParams } = new URL(req.url);
+  const taskType = searchParams.get('taskType');
+
   const db = getDatabase();
-  const exams = db.prepare(`
-    SELECT id, code, title, description, status, start_date, end_date, start_at, end_at, created_at
+  let query = `
+    SELECT id, code, title, description, status, start_date, end_date, start_at, end_at, created_at, task_type
     FROM exams
-    ORDER BY id DESC
-  `).all();
+  `;
+  const params: any[] = [];
+
+  if (taskType === 'CANDIDATE_EXAM') {
+    query += ` WHERE (task_type = 'CANDIDATE_EXAM' OR task_type IS NULL) 
+                AND LOWER(title) NOT LIKE '%khảo sát%' 
+                AND LOWER(title) NOT LIKE '%đào tạo%' 
+                AND LOWER(title) NOT LIKE '%nhu cầu%' 
+                AND LOWER(code) NOT LIKE 'ks%'`;
+  } else if (taskType) {
+    query += ` WHERE task_type = ?`;
+    params.push(taskType);
+  }
+
+  query += ` ORDER BY id DESC`;
+
+  const exams = db.prepare(query).all(...params);
 
   return NextResponse.json({ exams });
 }
@@ -29,15 +47,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { code, title, description, startDate, endDate, startAt, endAt } = await req.json();
+    const { code, title, description, startDate, endDate, startAt, endAt, taskType } = await req.json();
     if (!code || !title) {
       return NextResponse.json({ error: 'Mã kỳ thi và Tên kỳ thi là bắt buộc.' }, { status: 400 });
     }
 
+    const assignedTaskType = taskType || 'CANDIDATE_EXAM';
     const db = getDatabase();
     const result = db.prepare(`
-      INSERT INTO exams (code, title, description, status, start_date, end_date, start_at, end_at)
-      VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?)
+      INSERT INTO exams (code, title, description, status, start_date, end_date, start_at, end_at, task_type)
+      VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?, ?)
     `).run(
       code.trim().toUpperCase(),
       title.trim(),
@@ -45,7 +64,8 @@ export async function POST(req: NextRequest) {
       startDate || null,
       endDate || null,
       startAt || null,
-      endAt || null
+      endAt || null,
+      assignedTaskType
     );
 
     logAudit({

@@ -96,6 +96,7 @@ export default function UnitTrainingDemandPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
 
   // Accordion state: Theo dõi đóng/mở từng chương trình
   const [expandedPrograms, setExpandedPrograms] = useState<Record<number, boolean>>({});
@@ -158,7 +159,7 @@ export default function UnitTrainingDemandPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            collectionId: data?.collection?.id || 1,
+            collectionId: selectedCollectionId || data?.collection?.id || 1,
             action: 'DRAFT',
             programData: {
               programId: selectedProgram.id,
@@ -179,16 +180,21 @@ export default function UnitTrainingDemandPage() {
     }, 15000);
 
     return () => clearTimeout(timer);
-  }, [showProgramModal, selectedProgram, isDirty, topicErrors, saving, isAutoSaving, topics, data?.collection?.id]);
+  }, [showProgramModal, selectedProgram, isDirty, topicErrors, saving, isAutoSaving, topics, data?.collection?.id, selectedCollectionId]);
 
   // 1. Tải hồ sơ khảo sát của đơn vị
-  const loadDemandData = async () => {
+  const loadDemandData = async (collId?: number) => {
     try {
       setLoading(true);
-      const res = await fetch('/api/training-demand');
+      const targetCollId = collId || selectedCollectionId;
+      const url = targetCollId ? `/api/training-demand?collectionId=${targetCollId}` : '/api/training-demand';
+      const res = await fetch(url);
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Lỗi tải dữ liệu');
       setData(resData);
+      if (resData.collection?.id) {
+        setSelectedCollectionId(resData.collection.id);
+      }
       if (resData.proposals && Array.isArray(resData.proposals)) {
         setProposals(resData.proposals);
       } else {
@@ -376,7 +382,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionId: data?.collection?.id || 1,
+          collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'SAVE_PROGRAM',
           programData: {
             programId: selectedProgram.id,
@@ -414,7 +420,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionId: data?.collection?.id || 1,
+          collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'DRAFT',
           programData: {
             programId: selectedProgram.id,
@@ -507,7 +513,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionId: data?.collection?.id || 1,
+          collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'SAVE_PROPOSALS',
           proposals
         })
@@ -547,7 +553,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          collectionId: data?.collection?.id || 1,
+          collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'SUBMIT_OFFICIAL'
         })
       });
@@ -662,14 +668,42 @@ export default function UnitTrainingDemandPage() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
-            <div className="text-right hidden sm:block">
+          <div className="flex items-center space-x-3 flex-wrap">
+            {/* Bộ chọn Đợt Khảo Sát Đào Tạo */}
+            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+              <Calendar className="w-4 h-4 text-[#005F3E] shrink-0" />
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] uppercase font-bold text-slate-400 leading-none">Đợt Khảo Sát Đào Tạo</span>
+                <select
+                  value={selectedCollectionId || data?.collection?.id || ''}
+                  onChange={(e) => loadDemandData(parseInt(e.target.value))}
+                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer mt-0.5"
+                >
+                  {(data?.allCollections || (data?.collection ? [data.collection] : [])).map((c: any) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} ({c.code}) — {c.status === 'OPEN' ? 'Đang mở tiếp nhận' : 'Đã đóng'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={() => loadDemandData()}
+              title="Làm mới dữ liệu khảo sát"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Làm mới</span>
+            </button>
+
+            <div className="text-right hidden md:block">
               <div className="text-xs text-slate-500 flex items-center justify-end space-x-1">
                 <Building2 className="w-3.5 h-3.5" />
                 <span>{data?.unit?.unit_code} - {data?.unit?.unit_name}</span>
               </div>
               <div className="text-xs font-medium text-slate-700">
-                {data?.collection?.title || 'Đợt Khảo sát Nhu cầu Đào tạo'}
+                Mã đơn vị: {data?.unit?.unit_code}
               </div>
             </div>
 

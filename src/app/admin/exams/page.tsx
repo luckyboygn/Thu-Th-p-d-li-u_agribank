@@ -72,7 +72,7 @@ export default function AdminExamsPage() {
   const fetchExams = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/exams');
+      const res = await fetch('/api/exams?taskType=CANDIDATE_EXAM');
       const data = await res.json();
       setExams(data.exams || []);
     } catch (err) {
@@ -124,7 +124,7 @@ export default function AdminExamsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newExamCode || !newExamTitle) {
-      setMessage({ type: 'error', text: 'Vui lòng điền đủ Mã đợt và Tên đợt thu thập.' });
+      setMessage({ type: 'error', text: 'Vui lòng điền đủ Mã đợt và Tên kỳ thi nghiệp vụ.' });
       return;
     }
     setCreating(true);
@@ -138,6 +138,7 @@ export default function AdminExamsPage() {
           code: newExamCode,
           title: newExamTitle,
           description: newExamDesc,
+          taskType: 'CANDIDATE_EXAM',
           startAt: newExamStartAt ? new Date(newExamStartAt).toISOString() : null,
           endAt: newExamEndAt ? new Date(newExamEndAt).toISOString() : null
         })
@@ -255,10 +256,10 @@ export default function AdminExamsPage() {
         <div>
           <h1 className="text-xl font-extrabold text-[#005F3E] flex items-center gap-2.5">
             <CalendarDays className="w-6 h-6 text-[#005F3E]" />
-            Quản Lý Các Đợt Thu Thập & Thời Hạn Tiếp Nhận
+            Quản Lý Kỳ Thi / Kiểm Tra Nghiệp Vụ Cán Bộ
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Quản lý độc lập từng đợt thu thập, cài đặt hạn chót bắt đầu/kết thúc và cấp gia hạn linh hoạt theo đơn vị.
+            Quản lý độc lập các đợt thi chuyên môn nghiệp vụ toàn hàng, hạn chót và cấp gia hạn cho các đơn vị. (Để quản lý Khảo sát nhu cầu đào tạo, vui lòng truy cập menu "Khảo sát nhu cầu đào tạo").
           </p>
         </div>
 
@@ -289,35 +290,35 @@ export default function AdminExamsPage() {
         <div className="flex items-center gap-2 mb-4 pb-3 border-b border-[#E2E8F0]">
           <PlusCircle className="w-5 h-5 text-[#005F3E]" />
           <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-            Thêm đợt thu thập dữ liệu mới
+            Thêm kỳ kiểm tra nghiệp vụ mới
           </h2>
         </div>
 
         <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Mã đợt thu thập <span className="text-[#A81D22]">*</span>
+              Mã kỳ thi nghiệp vụ <span className="text-[#A81D22]">*</span>
             </label>
             <input
               type="text"
               required
               value={newExamCode}
               onChange={(e) => setNewExamCode(e.target.value.toUpperCase())}
-              placeholder="VD: DOT_11_2026"
+              placeholder="VD: EXAM_11_2026"
               className="w-full bg-[#F4F6F8] border border-[#E2E8F0] rounded-lg p-2.5 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005F3E] focus:bg-white"
             />
           </div>
 
           <div className="md:col-span-2">
             <label className="block text-xs font-bold text-slate-700 mb-1">
-              Tên đợt thu thập / báo cáo <span className="text-[#A81D22]">*</span>
+              Tên kỳ kiểm tra nghiệp vụ <span className="text-[#A81D22]">*</span>
             </label>
             <input
               type="text"
               required
               value={newExamTitle}
               onChange={(e) => setNewExamTitle(e.target.value)}
-              placeholder="VD: Đợt thu thập danh sách nhân sự tháng 11/2026"
+              placeholder="VD: Kỳ kiểm tra nghiệp vụ chuyên môn định kỳ tháng 11/2026"
               className="w-full bg-[#F4F6F8] border border-[#E2E8F0] rounded-lg p-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005F3E] focus:bg-white"
             />
           </div>

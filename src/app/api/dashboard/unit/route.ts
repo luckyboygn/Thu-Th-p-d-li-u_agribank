@@ -25,15 +25,36 @@ export async function GET(req: NextRequest) {
   // Lấy đơn vị
   const unit = db.prepare('SELECT * FROM units WHERE id = ?').get(unitId) as any;
 
-  // Lấy kỳ thi
+  // Lấy danh sách kỳ thi nghiệp vụ (CHỈ lấy đợt thi nghiệp vụ / kê khai nhân sự, loại trừ khảo sát đào tạo)
+  const allExams = db.prepare(`
+    SELECT id, code, title, status, start_date, end_date, start_at, end_at, task_type
+    FROM exams
+    WHERE (task_type = 'CANDIDATE_EXAM' OR task_type IS NULL)
+      AND LOWER(title) NOT LIKE '%khảo sát%'
+      AND LOWER(title) NOT LIKE '%đào tạo%'
+      AND LOWER(title) NOT LIKE '%nhu cầu%'
+      AND LOWER(code) NOT LIKE 'ks%'
+    ORDER BY id DESC
+  `).all() as any[];
+
+  // Lấy danh sách các đợt khảo sát nhu cầu đào tạo (từ collections)
+  const allTrainingCollections = db.prepare(`
+    SELECT id, code, title, status, start_date, end_date, start_at, end_at, task_type
+    FROM collections
+    ORDER BY id DESC
+  `).all() as any[];
+
+  // Xác định examId hợp lệ cho Thi nghiệp vụ:
+  // Nếu param truyền vào là một đợt khảo sát hoặc không có trong allExams, fallback về đợt thi nghiệp vụ hợp lệ
   let examId = examIdParam ? parseInt(examIdParam) : null;
-  if (!examId) {
-    const activeExam = db.prepare("SELECT id, code, title, status FROM exams WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
+  const isRequestedExamValid = examId ? allExams.some(e => e.id === examId) : false;
+
+  if (!examId || !isRequestedExamValid) {
+    const activeExam = allExams.find(e => e.status === 'OPEN') || allExams[0] || null;
     examId = activeExam?.id || null;
   }
 
-  const exam = examId ? db.prepare('SELECT id, code, title, description, status, start_date, end_date, start_at, end_at FROM exams WHERE id = ?').get(examId) as any : null;
-  const allExams = db.prepare('SELECT id, code, title, status FROM exams ORDER BY id DESC').all() as any[];
+  const exam = examId ? db.prepare('SELECT id, code, title, description, status, start_date, end_date, start_at, end_at, task_type FROM exams WHERE id = ?').get(examId) as any : null;
 
   // Lấy thông tin gia hạn riêng của đơn vị (nếu có)
   let deadlineExtension: any = null;
@@ -113,6 +134,7 @@ export async function GET(req: NextRequest) {
     unit,
     exam,
     allExams,
+    allTrainingCollections,
     forms: formsStatus,
     latestUpload,
     errors,
