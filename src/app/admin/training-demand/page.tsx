@@ -30,7 +30,11 @@ import {
   ChevronRight,
   FileText,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  UploadCloud,
+  FileUp,
+  Mail,
+  FileCheck
 } from 'lucide-react';
 
 interface SummaryData {
@@ -132,6 +136,108 @@ export default function AdminTrainingDemandPage() {
   const [reopenLoading, setReopenLoading] = useState(false);
   const [reopenSuccess, setReopenSuccess] = useState('');
   const [allUnitsStatusFilter, setAllUnitsStatusFilter] = useState<'ALL' | 'SUBMITTED' | 'DRAFT' | 'NOT_SUBMITTED'>('ALL');
+
+  // Tab 3: Nộp hộ file Excel cho đơn vị (Nhận qua Email)
+  const [showProxyModal, setShowProxyModal] = useState(false);
+  const [proxyUnitId, setProxyUnitId] = useState<number | ''>('');
+  const [proxyFile, setProxyFile] = useState<File | null>(null);
+  const [proxyStatus, setProxyStatus] = useState<'SUBMITTED' | 'DRAFT'>('SUBMITTED');
+  const [proxyNote, setProxyNote] = useState('Nhận file Excel qua email chi nhánh');
+  const [proxyUploading, setProxyUploading] = useState(false);
+  const [proxyPreviewLoading, setProxyPreviewLoading] = useState(false);
+  const [proxyPreviewData, setProxyPreviewData] = useState<any | null>(null);
+  const [proxyError, setProxyError] = useState<string | null>(null);
+  const [proxySuccessMsg, setProxySuccessMsg] = useState<string | null>(null);
+
+  const openProxyModal = (unitId?: number) => {
+    const defaultUnitId = unitId || (typeof selectedUnitId === 'number' ? selectedUnitId : (units[0]?.id || ''));
+    setProxyUnitId(defaultUnitId);
+    setProxyFile(null);
+    setProxyPreviewData(null);
+    setProxyError(null);
+    setProxySuccessMsg(null);
+    setProxyStatus('SUBMITTED');
+    setProxyNote('Nhận file Excel qua email chi nhánh');
+    setShowProxyModal(true);
+  };
+
+  const runProxyPreview = async (file: File, uId: number) => {
+    try {
+      setProxyPreviewLoading(true);
+      setProxyError(null);
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('unitId', String(uId));
+      if (summary?.collectionId) fd.append('collectionId', String(summary.collectionId));
+      fd.append('mode', 'preview');
+
+      const res = await fetch('/api/training-demand/import-excel', {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi bóc tách file Excel.');
+      setProxyPreviewData(data);
+    } catch (err: any) {
+      setProxyError(err.message);
+    } finally {
+      setProxyPreviewLoading(false);
+    }
+  };
+
+  const handleProxyFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setProxyFile(file);
+    setProxyError(null);
+    setProxyPreviewData(null);
+
+    if (proxyUnitId) {
+      await runProxyPreview(file, Number(proxyUnitId));
+    }
+  };
+
+  const handleExecuteProxyUpload = async () => {
+    if (!proxyFile || !proxyUnitId) {
+      setProxyError('Vui lòng chọn đơn vị và file Excel.');
+      return;
+    }
+    try {
+      setProxyUploading(true);
+      setProxyError(null);
+      const fd = new FormData();
+      fd.append('file', proxyFile);
+      fd.append('unitId', String(proxyUnitId));
+      if (summary?.collectionId) fd.append('collectionId', String(summary.collectionId));
+      fd.append('status', proxyStatus);
+      fd.append('sourceNote', proxyNote);
+      fd.append('mode', 'execute');
+
+      const res = await fetch('/api/training-demand/import-excel', {
+        method: 'POST',
+        body: fd
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi lưu dữ liệu khảo sát.');
+
+      setProxySuccessMsg(data.message || 'Đã nộp hộ file Excel thành công!');
+      loadSummaryAndBaseData();
+      if (selectedUnitId === proxyUnitId || selectedUnitId === 'ALL') {
+        const fetchRes = await fetch(`/api/training-reports?type=BY_UNIT&unitId=${selectedUnitId}`);
+        if (fetchRes.ok) {
+          const uData = await fetchRes.json();
+          setUnitReportData(uData);
+        }
+      }
+      setTimeout(() => {
+        setShowProxyModal(false);
+      }, 2500);
+    } catch (err: any) {
+      setProxyError(err.message);
+    } finally {
+      setProxyUploading(false);
+    }
+  };
 
   // Tab 4: Master Catalog Audit & Management state (Stage 2)
   const [catalogSubTab, setCatalogSubTab] = useState<'browse' | 'audit'>('browse');
@@ -1139,16 +1245,34 @@ export default function AdminTrainingDemandPage() {
 
             <div className="flex items-center gap-2 pt-4 md:pt-0">
               {selectedUnitId === 'ALL' ? (
-                <a
-                  href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
-                  className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition-colors"
-                  title="Xuất file Excel gồm 2 Sheet: Sheet 1 Tổng hợp 155 ĐV, Sheet 2 Chi tiết chuyên đề toàn bộ đơn vị"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Xuất Excel Toàn Bộ {units.length || 155} Đơn Vị</span>
-                </a>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openProxyModal()}
+                    className="inline-flex items-center gap-2 bg-[#005F3E] hover:bg-[#004d32] text-white px-3.5 py-2 rounded-lg text-sm font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                    title="Nộp hộ file Excel nhận qua Email cho bất kỳ đơn vị nào"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Nộp Hộ File Excel Đơn Vị</span>
+                  </button>
+                  <a
+                    href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
+                    className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition-colors"
+                    title="Xuất file Excel gồm 2 Sheet: Sheet 1 Tổng hợp 155 ĐV, Sheet 2 Chi tiết chuyên đề toàn bộ đơn vị"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Xuất Excel Toàn Bộ {units.length || 155} Đơn Vị</span>
+                  </a>
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openProxyModal(selectedUnitId)}
+                    className="inline-flex items-center gap-1.5 bg-[#005F3E] hover:bg-[#004d32] text-white px-3 py-2 rounded-lg text-sm font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                    title="Nộp hộ file Excel nhận qua Email cho đơn vị này"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Upload hộ Excel</span>
+                  </button>
                   <a
                     href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${selectedUnitId}`}
                     className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -1335,6 +1459,13 @@ export default function AdminTrainingDemandPage() {
                                 >
                                   Xem
                                 </button>
+                                <button
+                                  onClick={() => openProxyModal(u.id)}
+                                  className="p-1 text-slate-500 hover:text-[#005F3E] hover:bg-emerald-50 rounded transition-colors cursor-pointer"
+                                  title={`Nộp hộ file Excel nhận qua Email cho [${u.unit_code}] ${u.unit_name}`}
+                                >
+                                  <UploadCloud className="w-3.5 h-3.5" />
+                                </button>
                                 <a
                                   href={`/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=${u.id}`}
                                   className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded"
@@ -1500,6 +1631,15 @@ export default function AdminTrainingDemandPage() {
 
                     {/* Nút hành động nhanh của Admin */}
                     <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+                      <button
+                        onClick={() => openProxyModal(typeof selectedUnitId === 'number' ? selectedUnitId : undefined)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                        title="Tải lên file Excel nhận qua Email để nộp hộ cho đơn vị này"
+                      >
+                        <UploadCloud className="w-4 h-4" />
+                        <span>Upload hộ Excel (Nhận qua Email)</span>
+                      </button>
+
                       {unitReportData.submission?.status === 'SUBMITTED' && (
                         <button
                           onClick={handleReopen}
@@ -2787,6 +2927,260 @@ export default function AdminTrainingDemandPage() {
               })()}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ADMIN NỘP HỘ FILE EXCEL KHẢO SÁT ĐÀO TẠO CHO ĐƠN VỊ (NHẬN QUA EMAIL) */}
+      {/* ========================================================================= */}
+      {showProxyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3.5 border-b border-slate-200">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-50 text-[#005F3E] rounded-xl border border-emerald-200">
+                  <UploadCloud className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                    <span>Nộp Hộ File Excel Khảo Sát Đào Tạo</span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-[#005F3E] text-[10px] font-bold rounded-full uppercase">
+                      Admin Proxy
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Hỗ trợ đơn vị chưa biết thao tác tự kê khai trên web, nhận file Excel qua Email.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProxyModal(false)}
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Thông báo lỗi / thành công */}
+            {proxyError && (
+              <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-800 font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{proxyError}</span>
+              </div>
+            )}
+            {proxySuccessMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-900 font-bold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span>{proxySuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Form Fields */}
+            <div className="space-y-4 text-xs">
+              {/* Chọn Đơn Vị */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Đơn vị tiếp nhận hồ sơ <span className="text-[#A81D22]">*</span>
+                </label>
+                <select
+                  value={proxyUnitId}
+                  onChange={(e) => {
+                    const uId = e.target.value === '' ? '' : parseInt(e.target.value);
+                    setProxyUnitId(uId);
+                    if (proxyFile && uId) {
+                      runProxyPreview(proxyFile, Number(uId));
+                    }
+                  }}
+                  className="w-full bg-[#F4F6F8] border border-slate-300 rounded-lg p-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005F3E] focus:bg-white"
+                >
+                  <option value="">-- Chọn chi nhánh / đơn vị --</option>
+                  {units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      [{u.unit_code}] {u.unit_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Khu vực chọn file Excel */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-700">
+                    File Excel khảo sát của đơn vị (.xlsx, .xls) <span className="text-[#A81D22]">*</span>
+                  </label>
+                  <a
+                    href="/api/training-demand/import-excel?action=TEMPLATE"
+                    download
+                    className="text-[11px] text-[#005F3E] hover:underline font-bold flex items-center gap-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>Tải file mẫu Excel chuẩn</span>
+                  </a>
+                </div>
+
+                <div className="border-2 border-dashed border-slate-300 hover:border-[#005F3E] rounded-xl p-5 text-center bg-slate-50/60 hover:bg-emerald-50/30 transition-all cursor-pointer relative">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleProxyFileSelect}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                  <div className="flex flex-col items-center gap-1.5 pointer-events-none">
+                    <FileUp className="w-8 h-8 text-[#005F3E]" />
+                    <p className="font-bold text-slate-700 text-xs">
+                      {proxyFile ? proxyFile.name : 'Bấm vào đây để chọn file Excel hoặc kéo thả file'}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {proxyFile ? `${(proxyFile.size / 1024).toFixed(1)} KB` : 'Hỗ trợ định dạng .xlsx, .xls (Theo mẫu khảo sát hoặc file xuất từ hệ thống)'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tùy chọn trạng thái & Ghi chú */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Trạng thái sau khi nạp file <span className="text-[#A81D22]">*</span>
+                  </label>
+                  <select
+                    value={proxyStatus}
+                    onChange={(e: any) => setProxyStatus(e.target.value)}
+                    className="w-full bg-[#F4F6F8] border border-slate-300 rounded-lg p-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005F3E] focus:bg-white"
+                  >
+                    <option value="SUBMITTED">★ Gửi chính thức & cấp Biên nhận ngay</option>
+                    <option value="DRAFT">Lưu bản nháp (Để xem lại)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {proxyStatus === 'SUBMITTED'
+                      ? 'Hệ thống sẽ lập tức tạo Biên nhận nộp có mã vạch và dấu xác nhận điện tử thay đơn vị.'
+                      : 'Hồ sơ lưu dưới dạng Bản nháp, cho phép đơn vị hoặc Admin kiểm tra và chỉnh sửa tiếp.'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Ghi chú nguồn nhận <span className="text-slate-400 font-normal">(Lưu vào Audit Log)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={proxyNote}
+                    onChange={(e) => setProxyNote(e.target.value)}
+                    placeholder="VD: Nhận qua email từ cán bộ A ngày 16/10/2026"
+                    className="w-full bg-[#F4F6F8] border border-slate-300 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#005F3E] focus:bg-white"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Ghi nhận nhật ký để phục vụ kiểm toán và đối chiếu sau này.
+                  </p>
+                </div>
+              </div>
+
+              {/* Bảng Preview kết quả bóc tách dữ liệu */}
+              {proxyPreviewLoading ? (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-500 flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-[#005F3E]" />
+                  <span>Đang phân tích và bóc tách dữ liệu từ file Excel...</span>
+                </div>
+              ) : proxyPreviewData ? (
+                <div className="p-4 bg-emerald-50/70 border border-emerald-300 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-emerald-200">
+                    <div className="font-bold text-emerald-950 flex items-center gap-1.5 text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-[#005F3E]" />
+                      <span>Kết quả bóc tách dữ liệu từ file:</span>
+                    </div>
+                    <span className="text-[11px] font-mono font-bold text-slate-600">
+                      {proxyPreviewData.totalRowsProcessed} dòng xử lý
+                    </span>
+                  </div>
+
+                  {/* 4 Thẻ KPI tóm tắt */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                    <div className="bg-white p-2 rounded-lg border border-emerald-200 shadow-2xs">
+                      <div className="text-[10px] text-slate-500 font-semibold uppercase">Khung CT</div>
+                      <div className="text-base font-extrabold text-[#005F3E]">{proxyPreviewData.programsCount}</div>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-emerald-200 shadow-2xs">
+                      <div className="text-[10px] text-slate-500 font-semibold uppercase">Chuyên đề</div>
+                      <div className="text-base font-extrabold text-blue-700">{proxyPreviewData.topicsCount}</div>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-emerald-200 shadow-2xs">
+                      <div className="text-[10px] text-slate-500 font-semibold uppercase">Ngoài khung</div>
+                      <div className="text-base font-extrabold text-amber-700">{proxyPreviewData.proposalsCount}</div>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-emerald-300 shadow-2xs bg-emerald-50">
+                      <div className="text-[10px] text-emerald-800 font-bold uppercase">Tổng Lượt Học Viên</div>
+                      <div className="text-lg font-black text-[#A81D22]">
+                        {Number(proxyPreviewData.grandTotalParticipants || 0).toLocaleString('vi-VN')}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Danh sách chương trình bóc tách được */}
+                  {proxyPreviewData.programs && proxyPreviewData.programs.length > 0 && (
+                    <div className="max-h-36 overflow-y-auto divide-y divide-emerald-100 bg-white rounded-lg border border-emerald-200 p-2 text-[11px]">
+                      {proxyPreviewData.programs.map((p: any, idx: number) => (
+                        <div key={idx} className="py-1 flex items-center justify-between">
+                          <span className="font-semibold text-slate-800 truncate max-w-[340px]" title={p.programName}>
+                            {p.programCode ? `[${p.programCode}] ` : ''}{p.programName}
+                          </span>
+                          <span className="font-mono font-bold text-[#005F3E] shrink-0 ml-2">
+                            {p.topicCount} CĐ • {p.totalParticipants} lượt
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Cảnh báo nếu có */}
+                  {proxyPreviewData.warnings && proxyPreviewData.warnings.length > 0 && (
+                    <div className="text-[10px] text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 space-y-0.5">
+                      {proxyPreviewData.warnings.map((w: string, i: number) => (
+                        <div key={i} className="flex items-center gap-1">
+                          <span>⚠️</span>
+                          <span>{w}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setShowProxyModal(false)}
+                disabled={proxyUploading}
+                className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExecuteProxyUpload}
+                disabled={proxyUploading || !proxyFile || !proxyUnitId}
+                className="px-5 py-2.5 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+              >
+                {proxyUploading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Đang nộp hồ sơ...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>
+                      {proxyStatus === 'SUBMITTED' ? 'Xác Nhận Nộp Hộ & Cấp Biên Nhận' : 'Lưu Bản Nháp Cho Đơn Vị'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
