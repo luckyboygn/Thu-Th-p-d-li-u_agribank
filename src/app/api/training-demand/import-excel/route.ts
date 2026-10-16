@@ -50,7 +50,9 @@ export async function GET(req: NextRequest) {
       'Tên Chuyên Đề Đào Tạo': t.topic_name,
       'Hình Thức Đào Tạo': t.delivery_method || 'Trực tiếp / Trực tuyến',
       'Thời Lượng': t.duration || '1 ngày',
-      'Số Lượng Người Đăng Ký': '',
+      'Đã Học (Số lượng)': '',
+      'Đăng Ký Học Năm 2027 (Số lượng)': '',
+      'Đăng Ký Học Năm 2027 (Họ tên)': '',
       'Ghi Chú': ''
     }));
 
@@ -62,7 +64,9 @@ export async function GET(req: NextRequest) {
       { wch: 55 },
       { wch: 22 },
       { wch: 15 },
-      { wch: 25 },
+      { wch: 20 },
+      { wch: 28 },
+      { wch: 35 },
       { wch: 30 }
     ];
     xlsx.utils.book_append_sheet(wb, ws1, 'Nhu_Cau_Dao_Tao');
@@ -91,8 +95,8 @@ export async function GET(req: NextRequest) {
 
     // Sheet 3: Hướng dẫn
     const dataSheet3 = [
-      { 'Mục': '1. Phạm vi', 'Nội dung': 'Biểu mẫu phục vụ khảo sát nhu cầu đào tạo toàn hàng năm 2027 dành cho các đơn vị.' },
-      { 'Mục': '2. Cách nhập Sheet 1 (Nhu_Cau_Dao_Tao)', 'Nội dung': 'Điền số lượng cán bộ đăng ký tham gia vào cột [Số Lượng Người Đăng Ký] (phải là số nguyên >= 0). Bỏ trống hoặc điền 0 nếu không có nhu cầu.' },
+      { 'Mục': '1. Phạm vi', 'Nội dung': 'Biểu mẫu phục vụ khảo sát nhu cầu đào tạo toàn hệ thống Agribank năm 2027 dành cho các đơn vị.' },
+      { 'Mục': '2. Cách nhập Sheet 1 (Nhu_Cau_Dao_Tao)', 'Nội dung': 'Điền số lượng cán bộ đăng ký tham gia vào cột [Đăng Ký Học Năm 2027 (Số lượng)] (phải là số nguyên >= 0). Nếu có danh sách họ tên cán bộ, điền vào cột [Đăng Ký Học Năm 2027 (Họ tên)]. Bỏ trống hoặc điền 0 nếu không có nhu cầu.' },
       { 'Mục': '3. Cách nhập Sheet 2 (De_Xuat_Ngoai_Khung)', 'Nội dung': 'Dành cho các chuyên đề đặc thù ngoài khung chương trình của Agribank. Điền tên chuyên đề, đối tượng và số lượng dự kiến.' },
       { 'Mục': '4. Hỗ trợ', 'Nội dung': 'Nếu đơn vị không tự thao tác trên hệ thống, vui lòng gửi file Excel này về email Admin để được hỗ trợ tải lên.' }
     ];
@@ -206,8 +210,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Dữ liệu bóc tách được
-    // ProgramID -> { programId, topicCounts: Map<topicId, { count, topicInfo }> }
-    const programsDataMap = new Map<number, { program: any; topics: Map<number, { count: number; topicInfo: any }> }>();
+    // ProgramID -> { programId, topicCounts: Map<topicId, { count, topicInfo, attendees, notes }> }
+    const programsDataMap = new Map<number, {
+      program: any;
+      topics: Map<number, { count: number; topicInfo: any; attendees?: string; notes?: string }>
+    }>();
     const proposalsList: Array<{
       proposal_name: string;
       target_audience?: string;
@@ -224,14 +231,24 @@ export async function POST(req: NextRequest) {
       const ws = workbook.Sheets[sheetName];
       if (!ws) continue;
 
-      const rows: any[] = xlsx.utils.sheet_to_json(ws, { defval: '' });
-      if (rows.length === 0) continue;
-
       const normSheet = normalizeName(sheetName);
+
+      // Bỏ qua các sheet phụ lục danh mục/hướng dẫn/thống kê tổng quát không chứa dữ liệu kê khai
+      if (
+        normSheet.includes('muc luc') ||
+        normSheet.includes('huong dan') ||
+        normSheet.includes('thong ke') ||
+        normSheet.includes('tong hop') ||
+        normSheet.includes('instruction')
+      ) {
+        continue;
+      }
+
       const isProposalSheet = normSheet.includes('de xuat') || normSheet.includes('ngoai khung') || normSheet.includes('proposal');
 
       if (isProposalSheet) {
         // Sheet Đề xuất ngoài khung
+        const rows: any[] = xlsx.utils.sheet_to_json(ws, { defval: '' });
         for (const row of rows) {
           totalRowsProcessed++;
           let propName = '';
@@ -268,85 +285,183 @@ export async function POST(req: NextRequest) {
           }
         }
       } else {
-        // Sheet Nhu cầu đào tạo theo khung
-        for (const row of rows) {
+        // Sheet Khảo sát nhu cầu đào tạo (Hỗ trợ cả dạng ma trận nhiều block stacked chuẩn Agribank lẫn bảng phẳng)
+        const matrix = xlsx.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][];
+        if (!matrix || matrix.length === 0) continue;
+
+        let currentProgramId: number | null = null;
+        let currentProgramObj: any = null;
+        let colMap: {
+          topicIdx?: number;
+          countIdx?: number;
+          namesIdx?: number;
+          progIdx?: number;
+          notesIdx?: number;
+          audienceIdx?: number;
+          durationIdx?: number;
+        } | null = null;
+
+        for (let rIdx = 0; rIdx < matrix.length; rIdx++) {
+          const row = matrix[rIdx];
+          if (!Array.isArray(row) || row.length === 0) continue;
           totalRowsProcessed++;
-          let progCodeOrName = '';
-          let topicName = '';
-          let count = 0;
-          let note = '';
-          let audience = '';
-          let duration = '';
 
-          for (const key of Object.keys(row)) {
-            const normKey = normalizeName(key);
-            const val = row[key];
+          const rowStr = row.map(c => String(c || '').trim()).filter(Boolean).join(' ');
+          if (!rowStr) continue;
 
-            if (normKey.includes('ma khung') || normKey.includes('chuong trinh') || normKey.includes('phu luc')) {
-              progCodeOrName = String(val).trim();
-            } else if (normKey.includes('ten chuyen de') || normKey.includes('chuyen de') || normKey.includes('noi dung') || normKey.includes('khoa hoc')) {
-              topicName = String(val).trim();
-            } else if (normKey.includes('so luong') || normKey.includes('dang ky') || normKey.includes('hoc vien') || normKey.includes('nguoi') || normKey === 'sl') {
-              const cNum = parseInt(String(val).replace(/[^0-9]/g, ''));
-              if (!isNaN(cNum) && cNum > 0) count = cNum;
-            } else if (normKey.includes('ghi chu')) {
-              note = String(val).trim();
-            } else if (normKey.includes('doi tuong')) {
-              audience = String(val).trim();
-            } else if (normKey.includes('thoi luong')) {
-              duration = String(val).trim();
+          // 1. Kiểm tra dòng Tiêu đề Khung chương trình / Phụ lục (VD: PHỤ LỤC I.1. KHUNG CHƯƠNG TRÌNH ĐÀO TẠO...)
+          const firstCells = row.slice(0, 3).map(c => String(c || '').trim()).join(' ');
+          const upperFirst = firstCells.toUpperCase();
+          if (
+            upperFirst.includes('PHỤ LỤC') ||
+            upperFirst.includes('PHU LUC') ||
+            upperFirst.includes('KHUNG CHƯƠNG TRÌNH') ||
+            upperFirst.includes('KHUNG CHUONG TRINH')
+          ) {
+            const normFirst = normalizeName(firstCells);
+            const matchedProg = allOfficialPrograms.find(p => {
+              const normPCode = normalizeName(p.code);
+              const normPName = normalizeName(p.name);
+              return normFirst.includes(normPCode) || normFirst.includes(normPName) || (normPCode && normFirst.includes(normPCode.replace(/[^a-z0-9]/g, '')));
+            });
+
+            if (matchedProg) {
+              currentProgramId = matchedProg.id;
+              currentProgramObj = matchedProg;
+              colMap = null; // Reset header mapping cho block mới
+              continue;
             }
           }
 
-          // Bỏ qua dòng không có số lượng hoặc tên chuyên đề rỗng
-          if (!topicName || count <= 0) continue;
+          // 2. Kiểm tra dòng Header của block (chứa 'Tên chuyên đề' hoặc 'Chuyên đề đào tạo')
+          const isHeaderRow = row.some(cell => {
+            const nCell = normalizeName(String(cell));
+            return (nCell.includes('ten chuyen de') || nCell.includes('chuyen de dao tao')) && !nCell.includes('hoan thanh');
+          });
 
-          // Khớp chuyên đề với CSDL chuẩn
-          const nTopic = normalizeName(topicName);
-          const matchedTopics = topicMapByName.get(nTopic);
+          if (isHeaderRow) {
+            colMap = {};
+            row.forEach((cell, idx) => {
+              const nCell = normalizeName(String(cell));
+              if ((nCell.includes('ten chuyen de') || nCell === 'chuyen de' || nCell.includes('chuyen de dao tao')) && !nCell.includes('hoan thanh') && !nCell.includes('chung chi')) {
+                colMap!.topicIdx = idx;
+              } else if (nCell.includes('dang ky') && (nCell.includes('2027') || nCell.includes('so luong') || nCell === 'sl' || nCell.includes('hoc vien')) && !nCell.includes('ho ten') && !nCell.includes('danh sach')) {
+                colMap!.countIdx = idx;
+              } else if (nCell.includes('ho ten') || nCell.includes('danh sach')) {
+                colMap!.namesIdx = idx;
+              } else if (nCell.includes('ma khung') || nCell.includes('chuong trinh')) {
+                colMap!.progIdx = idx;
+              } else if (nCell.includes('ghi chu')) {
+                colMap!.notesIdx = idx;
+              } else if (nCell.includes('doi tuong')) {
+                colMap!.audienceIdx = idx;
+              } else if (nCell.includes('thoi luong')) {
+                colMap!.durationIdx = idx;
+              }
+            });
 
-          let matchedTopic: any = null;
-          if (matchedTopics && matchedTopics.length > 0) {
-            if (matchedTopics.length === 1) {
-              matchedTopic = matchedTopics[0];
-            } else if (progCodeOrName) {
-              // Nếu có nhiều chuyên đề trùng tên ở các khung khác nhau, dùng Khung để phân định
-              const normProg = normalizeName(progCodeOrName);
-              const progByCode = programMapByCode.get(progCodeOrName.toUpperCase());
-              matchedTopic = matchedTopics.find(t => 
-                (progByCode && t.program_id === progByCode.id) ||
-                normalizeName(t.program_name).includes(normProg) ||
-                normProg.includes(normalizeName(t.program_name))
-              ) || matchedTopics[0];
-            } else {
-              matchedTopic = matchedTopics[0];
-            }
-          }
-
-          if (matchedTopic) {
-            // Chuyên đề thuộc Khung chính thức
-            const pId = matchedTopic.program_id;
-            if (!programsDataMap.has(pId)) {
-              const progObj = allOfficialPrograms.find(p => p.id === pId);
-              programsDataMap.set(pId, {
-                program: progObj,
-                topics: new Map()
+            // Nếu chưa bắt được countIdx qua tiêu chí trên, bắt cột có chứa 'so luong' hoặc 'sl' mà không phải cột 'da hoc'
+            if (colMap.countIdx === undefined) {
+              row.forEach((cell, idx) => {
+                const nCell = normalizeName(String(cell));
+                if ((nCell.includes('so luong') || nCell === 'sl') && !nCell.includes('da hoc') && !nCell.includes('ho ten')) {
+                  colMap!.countIdx = idx;
+                }
               });
             }
-            programsDataMap.get(pId)!.topics.set(matchedTopic.id, {
-              count,
-              topicInfo: matchedTopic
-            });
-          } else {
-            // Chuyên đề không có trong danh mục chuẩn -> Tự động đưa vào "Đề xuất ngoài khung"
-            proposalsList.push({
-              proposal_name: topicName,
-              target_audience: audience || 'Theo nhu cầu chi nhánh',
-              expected_duration: duration || '1-2 ngày',
-              participant_count: count,
-              notes: note || 'Nhận diện tự động từ file Excel nộp hộ'
-            });
-            warnings.push(`Chuyên đề "${topicName}" không có trong danh mục 844 chuyên đề chuẩn -> Đã tự động chuyển thành Đề xuất ngoài khung.`);
+            continue;
+          }
+
+          // 3. Xử lý dòng dữ liệu chuyên đề
+          if (colMap && colMap.topicIdx !== undefined) {
+            const rawTopicName = String(row[colMap.topicIdx] || '').trim();
+            if (!rawTopicName) continue;
+
+            const nRaw = normalizeName(rawTopicName);
+
+            // Bỏ qua dòng tổng kết hoặc chú thích (CHỈ bỏ qua dòng tổng thời gian, tổng cộng, KHÔNG bỏ qua chuyên đề 'Tổng quan...')
+            if (
+              nRaw.startsWith('tong thoi gian') ||
+              nRaw.startsWith('tong cong') ||
+              nRaw.startsWith('tong so ') ||
+              nRaw === 'tong' ||
+              nRaw.startsWith('ghi chu') ||
+              nRaw.startsWith('chu thich') ||
+              rawTopicName.startsWith('(*)')
+            ) {
+              continue;
+            }
+
+            // Lấy số lượng học viên đăng ký
+            let count = 0;
+            if (colMap.countIdx !== undefined && row[colMap.countIdx] !== undefined) {
+              const parsed = parseInt(String(row[colMap.countIdx]).replace(/[^0-9]/g, ''));
+              if (!isNaN(parsed) && parsed > 0) count = parsed;
+            }
+
+            // Bỏ qua chuyên đề không có nhu cầu (> 0)
+            if (count <= 0) continue;
+
+            const attendees = colMap.namesIdx !== undefined ? String(row[colMap.namesIdx] || '').trim() : '';
+            const rowNote = colMap.notesIdx !== undefined ? String(row[colMap.notesIdx] || '').trim() : '';
+            const rowProgVal = colMap.progIdx !== undefined ? String(row[colMap.progIdx] || '').trim() : '';
+
+            // Xác định chương trình (qua block header hoặc cột program từng dòng)
+            let rowProgId = currentProgramId;
+            if (rowProgVal) {
+              const progByCode = programMapByCode.get(rowProgVal.toUpperCase());
+              if (progByCode) {
+                rowProgId = progByCode.id;
+              } else {
+                const progByName = programMapByName.get(normalizeName(rowProgVal));
+                if (progByName) rowProgId = progByName.id;
+              }
+            }
+
+            // Khớp chuyên đề với CSDL chuẩn
+            const matchedList = topicMapByName.get(nRaw);
+            let matchedTopic: any = null;
+
+            if (matchedList && matchedList.length > 0) {
+              if (matchedList.length === 1) {
+                matchedTopic = matchedList[0];
+              } else if (rowProgId) {
+                matchedTopic = matchedList.find(t => t.program_id === rowProgId) || matchedList[0];
+              } else {
+                matchedTopic = matchedList[0];
+              }
+            }
+
+            if (matchedTopic) {
+              // Chuyên đề thuộc Khung chuẩn Agribank
+              const pId = matchedTopic.program_id;
+              if (!programsDataMap.has(pId)) {
+                const progObj = allOfficialPrograms.find(p => p.id === pId);
+                programsDataMap.set(pId, {
+                  program: progObj,
+                  topics: new Map()
+                });
+              }
+
+              programsDataMap.get(pId)!.topics.set(matchedTopic.id, {
+                count,
+                topicInfo: matchedTopic,
+                attendees,
+                notes: rowNote
+              });
+            } else {
+              // Chuyên đề đặc thù không nằm trong khung chuẩn -> Tự động ghi nhận vào Đề xuất ngoài khung
+              const aud = colMap.audienceIdx !== undefined ? String(row[colMap.audienceIdx] || '').trim() : '';
+              const dur = colMap.durationIdx !== undefined ? String(row[colMap.durationIdx] || '').trim() : '';
+              proposalsList.push({
+                proposal_name: rawTopicName,
+                target_audience: aud || 'Theo nhu cầu đơn vị',
+                expected_duration: dur || '1-2 ngày',
+                participant_count: count,
+                notes: [rowNote, attendees ? `Họ tên: ${attendees}` : ''].filter(Boolean).join(' | ') || 'Nhận diện tự động từ file Excel nộp hộ'
+              });
+              warnings.push(`Chuyên đề "${rawTopicName}" không có trong danh mục 844 chuyên đề chuẩn -> Đã tự động chuyển thành Đề xuất ngoài khung.`);
+            }
           }
         }
       }
@@ -450,8 +565,9 @@ export async function POST(req: NextRequest) {
       const insertDemandTopicStmt = db.prepare(`
         INSERT INTO training_demand_program_topics (
           demand_program_id, program_topic_id, participant_count,
-          topic_name_snapshot, delivery_method_snapshot, duration_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          topic_name_snapshot, delivery_method_snapshot, duration_snapshot,
+          attendees, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const [pId, pData] of programsDataMap.entries()) {
@@ -465,7 +581,9 @@ export async function POST(req: NextRequest) {
             tData.count,
             tData.topicInfo.topic_name || '',
             tData.topicInfo.delivery_method || '',
-            tData.topicInfo.duration || ''
+            tData.topicInfo.duration || '',
+            tData.attendees || null,
+            tData.notes || null
           );
         }
       }
