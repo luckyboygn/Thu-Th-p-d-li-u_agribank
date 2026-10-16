@@ -9,22 +9,50 @@ let dbInstance: DatabaseSync | null = null;
  * Đảm bảo các cột mới được thêm an toàn (không gây lỗi nếu đã có).
  */
 function runSchemaMigrations(db: DatabaseSync): void {
-  // Migration: Thêm cột attendees vào training_demand_program_topics (nếu chưa có)
+  // Migration 1: training_demand_program_topics (attendees, notes, completed_count)
   try {
     const cols = db.prepare('PRAGMA table_info(training_demand_program_topics)').all() as any[];
     const colNames = cols.map((c: any) => c.name);
     if (!colNames.includes('attendees')) {
       db.exec('ALTER TABLE training_demand_program_topics ADD COLUMN attendees TEXT;');
-      console.log('[DB Migration] Đã thêm cột attendees vào training_demand_program_topics.');
     }
     if (!colNames.includes('notes')) {
       db.exec('ALTER TABLE training_demand_program_topics ADD COLUMN notes TEXT;');
-      console.log('[DB Migration] Đã thêm cột notes vào training_demand_program_topics.');
+    }
+    if (!colNames.includes('completed_count')) {
+      db.exec('ALTER TABLE training_demand_program_topics ADD COLUMN completed_count INTEGER DEFAULT 0;');
+      console.log('[DB Migration] Đã thêm cột completed_count (Đã học) vào training_demand_program_topics.');
     }
   } catch (e: any) {
-    // Bỏ qua lỗi nếu bảng chưa tồn tại (hệ thống chưa init)
     if (!e.message?.includes('no such table')) {
       console.warn('[DB Migration] Cảnh báo migration training_demand_program_topics:', e.message);
+    }
+  }
+
+  // Migration 2: training_program_topics (các trường mô tả chi tiết từ Mẫu chuẩn)
+  try {
+    const tCols = db.prepare('PRAGMA table_info(training_program_topics)').all() as any[];
+    const tColNames = tCols.map((c: any) => c.name);
+
+    const newColumns: Record<string, string> = {
+      position_code: 'TEXT',
+      learning_path: 'TEXT',
+      competency: 'TEXT',
+      certificate_requirement: 'TEXT',
+      cert_planning_higher: 'TEXT',
+      cert_appoint_higher: 'TEXT',
+      cert_reappoint: 'TEXT'
+    };
+
+    for (const [col, type] of Object.entries(newColumns)) {
+      if (!tColNames.includes(col)) {
+        db.exec(`ALTER TABLE training_program_topics ADD COLUMN ${col} ${type};`);
+        console.log(`[DB Migration] Đã thêm cột ${col} vào training_program_topics.`);
+      }
+    }
+  } catch (e: any) {
+    if (!e.message?.includes('no such table')) {
+      console.warn('[DB Migration] Cảnh báo migration training_program_topics:', e.message);
     }
   }
 }

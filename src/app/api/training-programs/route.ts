@@ -32,7 +32,9 @@ export async function GET(req: NextRequest) {
     }
 
     const topics = db.prepare(`
-      SELECT id, program_id, topic_name, target_audience, delivery_method, duration, display_order
+      SELECT id, program_id, topic_name, position_code, target_audience, delivery_method, duration,
+             learning_path, competency, certificate_requirement,
+             cert_planning_higher, cert_appoint_higher, cert_reappoint, display_order
       FROM training_program_topics
       WHERE program_id = ?
       ORDER BY display_order ASC, id ASC

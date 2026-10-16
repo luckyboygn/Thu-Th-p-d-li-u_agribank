@@ -7,6 +7,7 @@ export interface TrainingProgramSummaryItem {
   groupName?: string;
   topicCount: number;
   participants: number;
+  completedCount?: number;
 }
 
 export interface ReceiptInfo {
@@ -86,6 +87,7 @@ export function getTrainingDemandProgramsSummary(
     const rows = db.prepare(`
       SELECT p.name as program_name, p.code as program_code, p.group_name,
              COALESCE(SUM(dt.participant_count), 0) as participants,
+             COALESCE(SUM(dt.completed_count), 0) as completed_count,
              COUNT(CASE WHEN dt.participant_count > 0 THEN 1 END) as topic_count
       FROM training_demand_programs dp
       JOIN training_programs p ON dp.program_id = p.id
@@ -100,7 +102,8 @@ export function getTrainingDemandProgramsSummary(
       programCode: r.program_code || '',
       groupName: r.group_name || '',
       topicCount: Number(r.topic_count || 0),
-      participants: Number(r.participants || 0)
+      participants: Number(r.participants || 0),
+      completedCount: Number(r.completed_count || 0)
     }));
   } catch (e) {
     return [];

@@ -473,10 +473,18 @@ export async function GET(req: NextRequest) {
                  u.unit_name as 'Tên đơn vị',
                  u.region as 'Vùng miền',
                  p.name as 'Khung Chương trình đào tạo',
+                 t.position_code as 'Vị trí chức danh',
                  t.topic_name as 'Tên chuyên đề',
                  t.delivery_method as 'Hình thức đào tạo',
                  t.duration as 'Thời lượng đào tạo',
-                 dt.participant_count as 'Số lượng người đăng ký',
+                 t.learning_path as 'Lộ trình đào tạo',
+                 t.competency as 'Năng lực',
+                 t.certificate_requirement as 'Chứng chỉ/chuẩn đào tạo',
+                 t.cert_planning_higher as 'Quy hoạch VT cao hơn',
+                 t.cert_appoint_higher as 'Bổ nhiệm VT cao hơn',
+                 t.cert_reappoint as 'Bổ nhiệm lại',
+                 COALESCE(dt.completed_count, 0) as 'Đã học',
+                 dt.participant_count as 'Đăng ký học năm 2027',
                  CASE 
                    WHEN ds.status = 'SUBMITTED' THEN 'ĐÃ GỬI CHÍNH THỨC'
                    WHEN ds.status = 'DRAFT' THEN 'ĐANG SOẠN THẢO'
@@ -490,7 +498,7 @@ export async function GET(req: NextRequest) {
           JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
           JOIN training_demand_submissions ds ON dp.submission_id = ds.id
           JOIN units u ON ds.unit_id = u.id
-          WHERE ds.collection_id = ? AND dt.participant_count > 0
+          WHERE ds.collection_id = ? AND (dt.participant_count > 0 OR dt.completed_count > 0)
           ORDER BY CAST(u.unit_code AS INTEGER) ASC, u.unit_code ASC, p.display_order ASC, t.display_order ASC
         `).all(collectionId) as any[];
 
@@ -556,17 +564,25 @@ export async function GET(req: NextRequest) {
           SELECT u.unit_code as 'Mã đơn vị',
                  u.unit_name as 'Tên đơn vị',
                  p.name as 'Khung Chương trình đào tạo',
+                 t.position_code as 'Vị trí chức danh',
                  t.topic_name as 'Tên chuyên đề',
                  t.delivery_method as 'Hình thức đào tạo',
                  t.duration as 'Thời lượng đào tạo',
-                 dt.participant_count as 'Số lượng người đăng ký'
+                 t.learning_path as 'Lộ trình đào tạo',
+                 t.competency as 'Năng lực',
+                 t.certificate_requirement as 'Chứng chỉ/chuẩn đào tạo',
+                 t.cert_planning_higher as 'Quy hoạch VT cao hơn',
+                 t.cert_appoint_higher as 'Bổ nhiệm VT cao hơn',
+                 t.cert_reappoint as 'Bổ nhiệm lại',
+                 COALESCE(dt.completed_count, 0) as 'Đã học',
+                 dt.participant_count as 'Đăng ký học năm 2027'
           FROM training_demand_program_topics dt
           JOIN training_program_topics t ON dt.program_topic_id = t.id
           JOIN training_programs p ON t.program_id = p.id
           JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
           JOIN training_demand_submissions ds ON dp.submission_id = ds.id
           JOIN units u ON ds.unit_id = u.id
-          WHERE ds.collection_id = ? AND ds.unit_id = ? AND dt.participant_count > 0
+          WHERE ds.collection_id = ? AND ds.unit_id = ? AND (dt.participant_count > 0 OR dt.completed_count > 0)
           ORDER BY p.display_order ASC, t.display_order ASC
         `).all(collectionId, uId);
 

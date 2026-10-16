@@ -38,11 +38,19 @@ interface ProgramTopic {
   id: number;
   program_id: number;
   topic_name: string;
+  position_code?: string;
   target_audience?: string;
   delivery_method: string;
   duration: string;
+  learning_path?: string;
+  competency?: string;
+  certificate_requirement?: string;
+  cert_planning_higher?: string;
+  cert_appoint_higher?: string;
+  cert_reappoint?: string;
   display_order: number;
   participant_count: number;
+  completed_count?: number;
 }
 
 interface DeclaredProgram {
@@ -55,15 +63,24 @@ interface DeclaredProgram {
   total_available_topics: number;
   registered_topic_count: number;
   sum_participants: number;
+  sum_completed?: number;
   notes?: string | null;
   topics: Array<{
     demand_topic_id: number;
     program_topic_id: number;
     participant_count: number;
+    completed_count?: number;
     topic_name: string;
+    position_code?: string;
     target_audience?: string;
     delivery_method: string;
     duration: string;
+    learning_path?: string;
+    competency?: string;
+    certificate_requirement?: string;
+    cert_planning_higher?: string;
+    cert_appoint_higher?: string;
+    cert_reappoint?: string;
     display_order: number;
   }>;
 }
@@ -119,7 +136,9 @@ function UnitTrainingDemandContent() {
   const [topicsLoading, setTopicsLoading] = useState(false);
   const [topics, setTopics] = useState<ProgramTopic[]>([]);
   const [topicErrors, setTopicErrors] = useState<Record<number, string>>({});
+  const [completedErrors, setCompletedErrors] = useState<Record<number, string>>({});
   const [applyAllValue, setApplyAllValue] = useState<string>('');
+  const [applyAllCompletedValue, setApplyAllCompletedValue] = useState<string>('');
   const [isDirty, setIsDirty] = useState(false);
   const [programNotes, setProgramNotes] = useState<string>('');
 
@@ -152,7 +171,7 @@ function UnitTrainingDemandContent() {
 
   // Tự động lưu nháp định kỳ (15s khi modal mở và có thay đổi hợp lệ)
   useEffect(() => {
-    if (!showProgramModal || !selectedProgram || !isDirty || Object.keys(topicErrors).length > 0 || saving || isAutoSaving) {
+    if (!showProgramModal || !selectedProgram || !isDirty || Object.keys(topicErrors).length > 0 || Object.keys(completedErrors).length > 0 || saving || isAutoSaving) {
       return;
     }
 
@@ -168,7 +187,13 @@ function UnitTrainingDemandContent() {
             action: 'DRAFT',
             programData: {
               programId: selectedProgram.id,
-              topicCounts: topics.map(t => ({ topicId: t.id, count: t.participant_count }))
+              notes: programNotes,
+              topicCounts: topics.map(t => ({
+                topicId: t.id,
+                count: t.participant_count || 0,
+                completedCount: t.completed_count || 0,
+                completed_count: t.completed_count || 0
+              }))
             }
           })
         });
@@ -185,7 +210,7 @@ function UnitTrainingDemandContent() {
     }, 15000);
 
     return () => clearTimeout(timer);
-  }, [showProgramModal, selectedProgram, isDirty, topicErrors, saving, isAutoSaving, topics, data?.collection?.id, selectedCollectionId, unitIdParam]);
+  }, [showProgramModal, selectedProgram, isDirty, topicErrors, completedErrors, saving, isAutoSaving, topics, programNotes, data?.collection?.id, selectedCollectionId, unitIdParam]);
 
   // 1. Tải hồ sơ khảo sát của đơn vị
   const loadDemandData = async (collId?: number) => {
@@ -254,10 +279,15 @@ function UnitTrainingDemandContent() {
   }, []);
 
   // 3. Khi chọn một Khung chương trình trong modal
-  const handleSelectProgram = async (prog: CatalogProgram, existingCounts?: Map<number, number>) => {
+  const handleSelectProgram = async (
+    prog: CatalogProgram,
+    existingData?: Map<number, { participant_count: number; completed_count: number }>
+  ) => {
     setSelectedProgram(prog);
     setApplyAllValue('');
+    setApplyAllCompletedValue('');
     setTopicErrors({});
+    setCompletedErrors({});
     setIsDirty(false);
     setTopicsLoading(true);
 
@@ -268,7 +298,8 @@ function UnitTrainingDemandContent() {
 
       const mappedTopics: ProgramTopic[] = list.map((t: any) => ({
         ...t,
-        participant_count: existingCounts?.has(t.id) ? existingCounts.get(t.id)! : 0
+        participant_count: existingData?.has(t.id) ? existingData.get(t.id)!.participant_count : 0,
+        completed_count: existingData?.has(t.id) ? existingData.get(t.id)!.completed_count : 0
       }));
 
       setTopics(mappedTopics);
@@ -285,6 +316,9 @@ function UnitTrainingDemandContent() {
     setSelectedProgram(null);
     setTopics([]);
     setTopicErrors({});
+    setCompletedErrors({});
+    setApplyAllValue('');
+    setApplyAllCompletedValue('');
     setIsDirty(false);
     setProgramNotes('');
     setProgramSearchQuery('');
@@ -302,8 +336,11 @@ function UnitTrainingDemandContent() {
       topic_count: prog.total_available_topics
     };
 
-    const countMap = new Map<number, number>();
-    prog.topics.forEach(t => countMap.set(t.program_topic_id, t.participant_count));
+    const countMap = new Map<number, { participant_count: number; completed_count: number }>();
+    prog.topics.forEach(t => countMap.set(t.program_topic_id, {
+      participant_count: t.participant_count || 0,
+      completed_count: t.completed_count || 0
+    }));
 
     setProgramNotes(prog.notes || '');
     handleSelectProgram(catalogItem, countMap);
@@ -311,7 +348,28 @@ function UnitTrainingDemandContent() {
   };
 
   // 6. Áp dụng cho tất cả chuyên đề trong chương trình
-  const handleApplyToAll = () => {
+  const handleApplyToAllCompleted = () => {
+    const rawVal = applyAllCompletedValue.trim();
+    if (rawVal === '') {
+      setTopics(prev => prev.map(t => ({ ...t, completed_count: 0 })));
+      setCompletedErrors({});
+      setIsDirty(true);
+      return;
+    }
+
+    const valNum = Number(rawVal);
+    if (isNaN(valNum) || !Number.isInteger(valNum) || valNum < 0) {
+      setActionMessage({ type: 'warning', text: 'Số lượng đã học áp dụng phải là số nguyên không âm (>= 0).' });
+      return;
+    }
+
+    setTopics(prev => prev.map(t => ({ ...t, completed_count: valNum })));
+    setCompletedErrors({});
+    setIsDirty(true);
+    setActionMessage({ type: 'success', text: `Đã áp dụng số lượng Đã học = ${valNum} cho tất cả ${topics.length} chuyên đề!` });
+  };
+
+  const handleApplyToAllParticipant = () => {
     const rawVal = applyAllValue.trim();
     if (rawVal === '') {
       setTopics(prev => prev.map(t => ({ ...t, participant_count: 0 })));
@@ -329,11 +387,11 @@ function UnitTrainingDemandContent() {
     setTopics(prev => prev.map(t => ({ ...t, participant_count: valNum })));
     setTopicErrors({});
     setIsDirty(true);
-    setActionMessage({ type: 'success', text: `Đã áp dụng số lượng ${valNum} cho tất cả ${topics.length} chuyên đề!` });
+    setActionMessage({ type: 'success', text: `Đã áp dụng số lượng Đăng ký học 2027 = ${valNum} cho tất cả ${topics.length} chuyên đề!` });
   };
 
   // 7. Thay đổi số lượng của riêng một chuyên đề với Client-side Validation tức thì
-  const handleTopicCountChange = (topicId: number, valStr: string) => {
+  const handleTopicParticipantChange = (topicId: number, valStr: string) => {
     setIsDirty(true);
     const trimmed = valStr.trim();
 
@@ -364,6 +422,37 @@ function UnitTrainingDemandContent() {
     setTopics(prev => prev.map(t => t.id === topicId ? { ...t, participant_count: isNaN(num) ? 0 : Math.max(0, num) } : t));
   };
 
+  const handleTopicCompletedChange = (topicId: number, valStr: string) => {
+    setIsDirty(true);
+    const trimmed = valStr.trim();
+
+    if (trimmed === '') {
+      setTopics(prev => prev.map(t => t.id === topicId ? { ...t, completed_count: 0 } : t));
+      setCompletedErrors(prev => {
+        const next = { ...prev };
+        delete next[topicId];
+        return next;
+      });
+      return;
+    }
+
+    const num = Number(trimmed);
+    if (isNaN(num) || !Number.isInteger(num) || num < 0) {
+      setCompletedErrors(prev => ({
+        ...prev,
+        [topicId]: 'Chỉ cho phép số nguyên không âm (>= 0)'
+      }));
+    } else {
+      setCompletedErrors(prev => {
+        const next = { ...prev };
+        delete next[topicId];
+        return next;
+      });
+    }
+
+    setTopics(prev => prev.map(t => t.id === topicId ? { ...t, completed_count: isNaN(num) ? 0 : Math.max(0, num) } : t));
+  };
+
   // 8. Lưu chương trình và danh sách chuyên đề
   const handleSaveProgram = async () => {
     if (!selectedProgram) {
@@ -372,14 +461,19 @@ function UnitTrainingDemandContent() {
     }
 
     // Kiểm tra lỗi còn tồn tại tại các ô
-    if (Object.keys(topicErrors).length > 0) {
+    if (Object.keys(topicErrors).length > 0 || Object.keys(completedErrors).length > 0) {
       setActionMessage({ type: 'error', text: 'Vui lòng sửa các ô có số lượng không hợp lệ trước khi lưu.' });
       return;
     }
 
     for (const t of topics) {
       if (isNaN(t.participant_count) || !Number.isInteger(t.participant_count) || t.participant_count < 0) {
-        setActionMessage({ type: 'error', text: `Chuyên đề "${t.topic_name}" có số lượng đăng ký không hợp lệ.` });
+        setActionMessage({ type: 'error', text: `Chuyên đề "${t.topic_name}" có số lượng đăng ký học 2027 không hợp lệ.` });
+        return;
+      }
+      const cCount = t.completed_count ?? 0;
+      if (isNaN(cCount) || !Number.isInteger(cCount) || cCount < 0) {
+        setActionMessage({ type: 'error', text: `Chuyên đề "${t.topic_name}" có số lượng đã học không hợp lệ.` });
         return;
       }
     }
@@ -396,7 +490,12 @@ function UnitTrainingDemandContent() {
           programData: {
             programId: selectedProgram.id,
             notes: programNotes,
-            topicCounts: topics.map(t => ({ topicId: t.id, count: t.participant_count }))
+            topicCounts: topics.map(t => ({
+              topicId: t.id,
+              count: t.participant_count || 0,
+              completedCount: t.completed_count || 0,
+              completed_count: t.completed_count || 0
+            }))
           }
         })
       });
@@ -418,7 +517,7 @@ function UnitTrainingDemandContent() {
   // 8b. Lưu nháp thủ công bằng action DRAFT
   const handleSaveDraft = async () => {
     if (!selectedProgram) return;
-    if (Object.keys(topicErrors).length > 0) {
+    if (Object.keys(topicErrors).length > 0 || Object.keys(completedErrors).length > 0) {
       setActionMessage({ type: 'error', text: 'Vui lòng sửa các ô có số lượng không hợp lệ trước khi lưu nháp.' });
       return;
     }
@@ -435,7 +534,12 @@ function UnitTrainingDemandContent() {
           programData: {
             programId: selectedProgram.id,
             notes: programNotes,
-            topicCounts: topics.map(t => ({ topicId: t.id, count: t.participant_count }))
+            topicCounts: topics.map(t => ({
+              topicId: t.id,
+              count: t.participant_count || 0,
+              completedCount: t.completed_count || 0,
+              completed_count: t.completed_count || 0
+            }))
           }
         })
       });
@@ -1015,19 +1119,29 @@ function UnitTrainingDemandContent() {
                                 {isExpanded ? <ChevronDown className="w-5 h-5 text-emerald-700" /> : <ChevronRight className="w-5 h-5" />}
                               </button>
                               <div>
-                                <div className="flex items-center space-x-2 mb-1">
+                                <div className="flex flex-wrap items-center gap-2 mb-1">
                                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-white font-mono">
                                     {prog.program_code}
                                   </span>
-                                  {hasRegistered ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                      Đã nhập {prog.sum_participants} người
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                      Chưa nhập số lượng
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const sumProgCompleted = prog.topics?.reduce((acc, t) => acc + (t.completed_count || 0), 0) ?? (prog.sum_completed || 0);
+                                    return (
+                                      <>
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                          Đã học: {sumProgCompleted.toLocaleString()} người
+                                        </span>
+                                        {hasRegistered ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                            ĐK 2027: {prog.sum_participants.toLocaleString()} người
+                                          </span>
+                                        ) : (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                            Chưa nhập ĐK 2027
+                                          </span>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                                 <h4 className="text-sm font-bold text-slate-900 leading-snug">
                                   {prog.program_name}
@@ -1043,10 +1157,13 @@ function UnitTrainingDemandContent() {
                             <div className="flex items-center space-x-4">
                               <div className="text-right">
                                 <div className="text-sm font-extrabold text-emerald-800">
-                                  {prog.sum_participants.toLocaleString()} người
+                                  ĐK 2027: {prog.sum_participants.toLocaleString()} người
                                 </div>
-                                <div className="text-xs text-slate-500">
-                                  {prog.registered_topic_count} / {prog.total_available_topics} chuyên đề
+                                <div className="text-xs text-blue-700 font-semibold">
+                                  Đã học: {(prog.topics?.reduce((acc, t) => acc + (t.completed_count || 0), 0) ?? (prog.sum_completed || 0)).toLocaleString()} người
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {prog.registered_topic_count} / {prog.total_available_topics} chuyên đề có ĐK
                                 </div>
                               </div>
 
@@ -1074,18 +1191,29 @@ function UnitTrainingDemandContent() {
                             </div>
                           </div>
 
-                          {/* Accordion Body: Bảng chi tiết các chuyên đề */}
+                          {/* Accordion Body: Bảng chi tiết các chuyên đề đầy đủ trường mô tả */}
                           {isExpanded && (
                             <div className="border-t border-slate-200 p-0 overflow-x-auto">
-                              <table className="w-full text-left text-xs">
-                                <thead className="bg-[#F8F9FA] text-slate-600 font-bold uppercase text-[11px] border-b border-slate-200">
+                              <table className="w-full text-left text-xs whitespace-nowrap">
+                                <thead className="bg-[#F8F9FA] text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                                   <tr>
-                                    <th className="px-4 py-3 w-12 text-center">STT</th>
-                                    <th className="px-4 py-3 w-72">Tên chuyên đề</th>
-                                    <th className="px-4 py-3 min-w-[260px]">Đối tượng tham gia</th>
-                                    <th className="px-4 py-3 w-28 text-center">Thời lượng</th>
-                                    <th className="px-4 py-3 w-36 text-center">Hình thức</th>
-                                    <th className="px-5 py-3 w-40 text-right">Số lượng đăng ký</th>
+                                    <th className="px-3 py-3 w-10 text-center">STT</th>
+                                    <th className="px-3 py-3 w-20 text-center">Vị trí chức danh</th>
+                                    <th className="px-4 py-3 min-w-[240px] whitespace-normal">Tên chuyên đề</th>
+                                    <th className="px-3 py-3 w-28 text-center">Hình thức đào tạo</th>
+                                    <th className="px-3 py-3 w-24 text-center">Thời lượng</th>
+                                    <th className="px-3 py-3 w-32 text-center whitespace-normal">Lộ trình đào tạo</th>
+                                    <th className="px-3 py-3 w-20 text-center">Năng lực</th>
+                                    <th className="px-4 py-3 min-w-[200px] whitespace-normal">Chứng chỉ/chuẩn đào tạo</th>
+                                    <th className="px-3 py-3 w-20 text-center">Quy hoạch VT cao hơn</th>
+                                    <th className="px-3 py-3 w-20 text-center">Bổ nhiệm VT cao hơn</th>
+                                    <th className="px-3 py-3 w-20 text-center">Bổ nhiệm lại</th>
+                                    <th className="px-4 py-3 w-28 text-right bg-blue-50/70 text-blue-900 font-extrabold border-l border-blue-100">
+                                      Đã học
+                                    </th>
+                                    <th className="px-4 py-3 w-36 text-right bg-emerald-50/70 text-emerald-900 font-extrabold border-l border-emerald-100">
+                                      Đăng ký học năm 2027
+                                    </th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -1096,30 +1224,59 @@ function UnitTrainingDemandContent() {
                                         t.participant_count > 0 ? 'bg-emerald-50/20' : ''
                                       }`}
                                     >
-                                      <td className="px-4 py-3 text-center text-slate-400 font-medium">
+                                      <td className="px-3 py-2.5 text-center text-slate-400 font-medium">
                                         {idx + 1}
                                       </td>
-                                      <td className="px-4 py-3 font-semibold text-slate-900">
+                                      <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-700 bg-slate-50/50">
+                                        {t.position_code || '—'}
+                                      </td>
+                                      <td className="px-4 py-2.5 font-semibold text-slate-900 whitespace-normal">
                                         {t.topic_name}
                                       </td>
-                                      <td className="px-4 py-3 text-slate-600 whitespace-pre-line leading-relaxed">
-                                        {t.target_audience || '—'}
-                                      </td>
-                                      <td className="px-4 py-3 text-slate-700 font-medium text-center">
-                                        {t.duration || '—'}
-                                      </td>
-                                      <td className="px-4 py-3 text-slate-600 text-center">
+                                      <td className="px-3 py-2.5 text-slate-600 text-center">
                                         {t.delivery_method || '—'}
                                       </td>
-                                      <td className="px-5 py-3 text-right">
+                                      <td className="px-3 py-2.5 text-slate-700 font-medium text-center">
+                                        {t.duration || '—'}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-slate-600 text-center whitespace-normal">
+                                        {t.learning_path || '—'}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-center font-medium text-slate-600">
+                                        {t.competency || '—'}
+                                      </td>
+                                      <td className="px-4 py-2.5 text-slate-600 whitespace-normal leading-relaxed text-[11px]">
+                                        {t.certificate_requirement || t.target_audience || '—'}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                        {t.cert_planning_higher || '—'}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                        {t.cert_appoint_higher || '—'}
+                                      </td>
+                                      <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                        {t.cert_reappoint || '—'}
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right bg-blue-50/30 border-l border-blue-100">
                                         <span
-                                          className={`inline-block font-extrabold px-3 py-1 rounded-lg text-xs ${
-                                            t.participant_count > 0
-                                              ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-200'
+                                          className={`inline-block font-bold px-2.5 py-1 rounded-lg text-xs ${
+                                            (t.completed_count || 0) > 0
+                                              ? 'bg-blue-100 text-blue-900 border border-blue-200'
                                               : 'text-slate-400 bg-slate-100'
                                           }`}
                                         >
-                                          {t.participant_count} người
+                                          {(t.completed_count || 0).toLocaleString()} người
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right bg-emerald-50/30 border-l border-emerald-100">
+                                        <span
+                                          className={`inline-block font-extrabold px-2.5 py-1 rounded-lg text-xs ${
+                                            t.participant_count > 0
+                                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                              : 'text-slate-400 bg-slate-100'
+                                          }`}
+                                        >
+                                          {t.participant_count.toLocaleString()} người
                                         </span>
                                       </td>
                                     </tr>
@@ -1693,23 +1850,46 @@ function UnitTrainingDemandContent() {
                     </div>
 
                     {/* Nút Áp dụng cho tất cả chuyên đề */}
-                    <div className="flex items-center space-x-2 bg-emerald-800/80 p-1.5 rounded-xl border border-emerald-700/60">
-                      <span className="text-xs text-emerald-100 pl-2">Áp dụng cho tất cả:</span>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="Số người"
-                        value={applyAllValue}
-                        onChange={e => setApplyAllValue(e.target.value)}
-                        className="w-20 px-2 py-1 text-xs bg-white text-slate-900 font-bold rounded-lg outline-none text-center"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleApplyToAll}
-                        className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-xs rounded-lg shadow-xs transition-colors"
-                      >
-                        Áp dụng
-                      </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Áp dụng Đã học */}
+                      <div className="flex items-center space-x-1.5 bg-blue-950/60 p-1.5 rounded-xl border border-blue-400/30">
+                        <span className="text-[11px] text-blue-200 pl-1 font-medium">Đã học:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={applyAllCompletedValue}
+                          onChange={e => setApplyAllCompletedValue(e.target.value)}
+                          className="w-16 px-2 py-1 text-xs bg-white text-slate-900 font-bold rounded-lg outline-none text-center"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleApplyToAllCompleted}
+                          className="px-2.5 py-1 bg-blue-500 hover:bg-blue-400 text-white font-bold text-xs rounded-lg shadow-xs transition-colors"
+                        >
+                          Áp dụng
+                        </button>
+                      </div>
+
+                      {/* Áp dụng Đăng ký học 2027 */}
+                      <div className="flex items-center space-x-1.5 bg-emerald-800/80 p-1.5 rounded-xl border border-emerald-700/60">
+                        <span className="text-[11px] text-emerald-100 pl-1 font-medium">ĐK 2027:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={applyAllValue}
+                          onChange={e => setApplyAllValue(e.target.value)}
+                          className="w-16 px-2 py-1 text-xs bg-white text-slate-900 font-bold rounded-lg outline-none text-center"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleApplyToAllParticipant}
+                          className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold text-xs rounded-lg shadow-xs transition-colors"
+                        >
+                          Áp dụng
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -1719,44 +1899,108 @@ function UnitTrainingDemandContent() {
                       <p>Đang tải danh sách chuyên đề...</p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto max-h-96">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 text-slate-700 uppercase font-bold sticky top-0 border-b border-slate-200 z-10">
+                    <div className="overflow-x-auto max-h-[460px]">
+                      <table className="w-full text-left text-xs whitespace-nowrap">
+                        <thead className="bg-slate-100 text-slate-700 uppercase font-bold sticky top-0 border-b border-slate-200 z-10 text-[10px] tracking-wider">
                           <tr>
                             <th className="px-3 py-3 w-10 text-center">STT</th>
-                            <th className="px-4 py-3 w-64">Tên chuyên đề</th>
-                            <th className="px-4 py-3 min-w-[240px]">Đối tượng tham gia</th>
+                            <th className="px-3 py-3 w-20 text-center">Vị trí chức danh</th>
+                            <th className="px-4 py-3 min-w-[240px] whitespace-normal">Tên chuyên đề</th>
+                            <th className="px-3 py-3 w-28 text-center">Hình thức đào tạo</th>
                             <th className="px-3 py-3 w-24 text-center">Thời lượng</th>
-                            <th className="px-3 py-3 w-32 text-center">Hình thức</th>
-                            <th className="px-4 py-3 w-40 text-right">Số lượng đăng ký</th>
+                            <th className="px-3 py-3 w-32 text-center whitespace-normal">Lộ trình đào tạo</th>
+                            <th className="px-3 py-3 w-20 text-center">Năng lực</th>
+                            <th className="px-4 py-3 min-w-[200px] whitespace-normal">Chứng chỉ/chuẩn đào tạo</th>
+                            <th className="px-3 py-3 w-20 text-center">Quy hoạch VT cao hơn</th>
+                            <th className="px-3 py-3 w-20 text-center">Bổ nhiệm VT cao hơn</th>
+                            <th className="px-3 py-3 w-20 text-center">Bổ nhiệm lại</th>
+                            <th className="px-3 py-3 w-28 text-right bg-blue-100/80 text-blue-900 border-l border-blue-200">
+                              <div className="flex flex-col items-end">
+                                <span>Đã học (*)</span>
+                                <span className="text-[9px] font-normal text-blue-700 lowercase">tự nhập SL</span>
+                              </div>
+                            </th>
+                            <th className="px-3 py-3 w-36 text-right bg-emerald-100/80 text-emerald-900 border-l border-emerald-200">
+                              <div className="flex flex-col items-end">
+                                <span>Đăng ký học năm 2027 (*)</span>
+                                <span className="text-[9px] font-normal text-emerald-700 lowercase">tự nhập SL</span>
+                              </div>
+                            </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {topics.map((t, idx) => {
                             const hasErr = !!topicErrors[t.id];
+                            const hasCompErr = !!completedErrors[t.id];
                             return (
                               <tr
                                 key={t.id}
                                 className={`hover:bg-slate-50 transition-colors ${
-                                  hasErr ? 'bg-rose-50/50' : t.participant_count > 0 ? 'bg-emerald-50/20' : ''
+                                  hasErr || hasCompErr ? 'bg-rose-50/50' : t.participant_count > 0 ? 'bg-emerald-50/20' : ''
                                 }`}
                               >
                                 <td className="px-3 py-2.5 text-center text-slate-400 font-medium">
                                   {idx + 1}
                                 </td>
-                                <td className="px-4 py-2.5 font-medium text-slate-900">
+                                <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-700 bg-slate-50/60">
+                                  {t.position_code || '—'}
+                                </td>
+                                <td className="px-4 py-2.5 font-semibold text-slate-900 whitespace-normal">
                                   {t.topic_name}
-                                </td>
-                                <td className="px-4 py-2.5 text-slate-600 whitespace-pre-line leading-relaxed">
-                                  {t.target_audience || '—'}
-                                </td>
-                                <td className="px-3 py-2.5 text-slate-700 font-medium text-center">
-                                  {t.duration || '—'}
                                 </td>
                                 <td className="px-3 py-2.5 text-slate-600 text-center">
                                   {t.delivery_method || '—'}
                                 </td>
-                                <td className="px-4 py-2.5 text-right">
+                                <td className="px-3 py-2.5 text-slate-700 font-medium text-center">
+                                  {t.duration || '—'}
+                                </td>
+                                <td className="px-3 py-2.5 text-slate-600 text-center whitespace-normal">
+                                  {t.learning_path || '—'}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-medium text-slate-600">
+                                  {t.competency || '—'}
+                                </td>
+                                <td className="px-4 py-2.5 text-slate-600 whitespace-normal leading-relaxed text-[11px]">
+                                  {t.certificate_requirement || t.target_audience || '—'}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                  {t.cert_planning_higher || '—'}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                  {t.cert_appoint_higher || '—'}
+                                </td>
+                                <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                  {t.cert_reappoint || '—'}
+                                </td>
+
+                                {/* Ô NHẬP 1: ĐÃ HỌC */}
+                                <td className="px-3 py-2.5 text-right bg-blue-50/40 border-l border-blue-100">
+                                  <div className="flex flex-col items-end">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={t.completed_count === 0 ? '' : (t.completed_count ?? '')}
+                                      placeholder="0"
+                                      onChange={e => handleTopicCompletedChange(t.id, e.target.value)}
+                                      className={`w-20 px-2 py-1.5 text-xs text-right font-bold rounded-lg border outline-none transition-all ${
+                                        hasCompErr
+                                          ? 'border-rose-500 bg-rose-50 text-rose-900 ring-2 ring-rose-200'
+                                          : (t.completed_count || 0) > 0
+                                          ? 'border-blue-500 bg-blue-50 text-blue-900 focus:ring-2 focus:ring-blue-500'
+                                          : 'border-slate-300 text-slate-800 focus:border-blue-500'
+                                      }`}
+                                    />
+                                    {hasCompErr && (
+                                      <span className="text-[9px] text-rose-600 font-bold mt-0.5">
+                                        {completedErrors[t.id]}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                {/* Ô NHẬP 2: ĐĂNG KÝ HỌC NĂM 2027 */}
+                                <td className="px-3 py-2.5 text-right bg-emerald-50/40 border-l border-emerald-100">
                                   <div className="flex flex-col items-end">
                                     <input
                                       type="number"
@@ -1764,7 +2008,7 @@ function UnitTrainingDemandContent() {
                                       step="1"
                                       value={t.participant_count === 0 ? '' : t.participant_count}
                                       placeholder="0"
-                                      onChange={e => handleTopicCountChange(t.id, e.target.value)}
+                                      onChange={e => handleTopicParticipantChange(t.id, e.target.value)}
                                       className={`w-24 px-2.5 py-1.5 text-xs text-right font-bold rounded-lg border outline-none transition-all ${
                                         hasErr
                                           ? 'border-rose-500 bg-rose-50 text-rose-900 ring-2 ring-rose-200'
@@ -1774,7 +2018,7 @@ function UnitTrainingDemandContent() {
                                       }`}
                                     />
                                     {hasErr && (
-                                      <span className="text-[10px] text-rose-600 font-bold mt-1">
+                                      <span className="text-[9px] text-rose-600 font-bold mt-0.5">
                                         {topicErrors[t.id]}
                                       </span>
                                     )}
@@ -1788,13 +2032,18 @@ function UnitTrainingDemandContent() {
                     </div>
                   )}
 
-                  <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex items-center justify-between text-xs">
+                  <div className="bg-slate-50 px-6 py-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
                     <span className="text-slate-500">
                       Tổng số: <strong>{topics.length}</strong> chuyên đề
                     </span>
-                    <span className="text-emerald-900 font-bold">
-                      Tổng số người đăng ký trong chương trình này: {topics.reduce((s, t) => s + (t.participant_count || 0), 0)} người
-                    </span>
+                    <div className="flex items-center space-x-4">
+                      <span className="text-blue-900 font-bold bg-blue-100/70 px-2.5 py-1 rounded-lg border border-blue-200">
+                        Tổng Đã học: {topics.reduce((s, t) => s + (t.completed_count || 0), 0).toLocaleString()} người
+                      </span>
+                      <span className="text-emerald-900 font-bold bg-emerald-100/70 px-2.5 py-1 rounded-lg border border-emerald-300">
+                        Tổng Đăng ký học 2027: {topics.reduce((s, t) => s + (t.participant_count || 0), 0).toLocaleString()} người
+                      </span>
+                    </div>
                   </div>
 
                   {/* GHI CHÚ BỔ SUNG CHO CHƯƠNG TRÌNH ĐÀO TẠO (Mục 2.8) */}
