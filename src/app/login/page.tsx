@@ -13,7 +13,8 @@ function LoginForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [buildTime, setBuildTime] = useState<string>(process.env.NEXT_PUBLIC_APP_BUILD_TIME || '09/10/2026 15:58');
+  const [buildTime, setBuildTime] = useState<string>(process.env.NEXT_PUBLIC_APP_BUILD_TIME || '16/10/2026 10:30');
+  const [gitCommit, setGitCommit] = useState<string>(process.env.NEXT_PUBLIC_GIT_COMMIT || '');
 
   useEffect(() => {
     // Khi người dùng vào trang đăng nhập, dọn dẹp sạch sẽ cache hoạt động cũ
@@ -24,6 +25,7 @@ function LoginForm() {
       .then((res) => res.json())
       .then((data) => {
         if (data?.buildTime) setBuildTime(data.buildTime);
+        if (data?.gitCommit) setGitCommit(data.gitCommit);
       })
       .catch(() => {});
   }, []);
@@ -160,8 +162,13 @@ function LoginForm() {
       {/* Góc nhỏ bên phải hiển thị rõ ngày giờ bản update */}
       <div className="fixed bottom-3 right-4 z-50 flex items-center gap-2 px-3 py-1.5 bg-white/95 backdrop-blur-xs border border-slate-200/90 rounded-xl shadow-xs text-slate-600 text-[11px] select-none">
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-        <span className="font-semibold text-slate-700">Bản cập nhật:</span>
+        <span className="font-semibold text-slate-700">Cập nhật:</span>
         <span className="font-mono text-[#005F3E] font-bold">{buildTime}</span>
+        {gitCommit && (
+          <span className="font-mono text-slate-400 text-[10px] border-l border-slate-200 pl-2">
+            commit <span className="text-slate-600 font-semibold">{gitCommit}</span>
+          </span>
+        )}
       </div>
     </div>
   );
