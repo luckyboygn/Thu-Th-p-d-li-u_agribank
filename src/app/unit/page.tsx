@@ -235,9 +235,14 @@ function UnitDashboardContent() {
       setUser(userData.user);
 
       const targetExamId = examId || selectedExamId;
-      
+      const unitIdParam = searchParams.get('unitId');
+
+      const unitQueryParams = new URLSearchParams();
+      if (targetExamId) unitQueryParams.set('examId', String(targetExamId));
+      if (unitIdParam) unitQueryParams.set('unitId', String(unitIdParam));
+
       // 1. Fetch dữ liệu riêng của đơn vị hiện tại
-      const res = await fetch(`/api/dashboard/unit${targetExamId ? `?examId=${targetExamId}` : ''}`);
+      const res = await fetch(`/api/dashboard/unit${unitQueryParams.toString() ? `?${unitQueryParams.toString()}` : ''}`);
       const dashData = await res.json();
       setData(dashData);
       const resolvedExamId = dashData.exam?.id || targetExamId || null;
@@ -245,10 +250,23 @@ function UnitDashboardContent() {
 
       // 2. Fetch khảo sát nhu cầu đào tạo của đơn vị
       try {
-        const tdRes = await fetch('/api/training-demand');
+        const tdQueryParams = new URLSearchParams();
+        if (unitIdParam) tdQueryParams.set('unitId', String(unitIdParam));
+        const tdUrl = `/api/training-demand${tdQueryParams.toString() ? `?${tdQueryParams.toString()}` : ''}`;
+        const tdRes = await fetch(tdUrl);
         if (tdRes.ok) {
           const tdJson = await tdRes.json();
           setTrainingData(tdJson);
+        } else if (dashData.trainingSubmission) {
+          setTrainingData({
+            collection: {
+              code: dashData.trainingSubmission.collection_code,
+              title: dashData.trainingSubmission.collection_title,
+              status: dashData.trainingSubmission.collection_status
+            },
+            submission: dashData.trainingSubmission,
+            summary: dashData.trainingSummary
+          });
         }
       } catch (tdErr) {
         console.error('Error fetching training demand:', tdErr);
@@ -904,7 +922,7 @@ function UnitDashboardContent() {
 
               <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between flex-wrap gap-3">
                 <span className="text-xs text-slate-500">
-                  {trainingData?.collection?.status === 'OPEN' ? 'Đợt khảo sát đang mở tiếp nhận' : 'Đợt khảo sát đã kết thúc'}
+                  {trainingData?.collection?.status === 'OPEN' || (!trainingData?.collection && data?.allTrainingCollections?.some(c => c.status === 'OPEN')) ? 'Đợt khảo sát đang mở tiếp nhận' : 'Đợt khảo sát đã kết thúc'}
                 </span>
 
                 <div className="flex items-center gap-2">
@@ -920,7 +938,7 @@ function UnitDashboardContent() {
                     </Link>
                   )}
                   <Link
-                    href="/unit/training-demand"
+                    href={searchParams.get('unitId') ? `/unit/training-demand?unitId=${searchParams.get('unitId')}` : '/unit/training-demand'}
                     className="px-4 py-2 bg-teal-800 hover:bg-teal-900 text-white rounded-xl text-xs font-bold transition-all shadow-xs inline-flex items-center gap-1.5"
                   >
                     <span>

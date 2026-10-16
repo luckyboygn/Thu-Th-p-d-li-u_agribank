@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   GraduationCap,
   PlusCircle,
@@ -92,7 +93,10 @@ interface ProgramGroup {
   program_count: number;
 }
 
-export default function UnitTrainingDemandPage() {
+function UnitTrainingDemandContent() {
+  const searchParams = useSearchParams();
+  const unitIdParam = searchParams.get('unitId');
+
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -159,6 +163,7 @@ export default function UnitTrainingDemandPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            unitId: unitIdParam || undefined,
             collectionId: selectedCollectionId || data?.collection?.id || 1,
             action: 'DRAFT',
             programData: {
@@ -180,14 +185,17 @@ export default function UnitTrainingDemandPage() {
     }, 15000);
 
     return () => clearTimeout(timer);
-  }, [showProgramModal, selectedProgram, isDirty, topicErrors, saving, isAutoSaving, topics, data?.collection?.id, selectedCollectionId]);
+  }, [showProgramModal, selectedProgram, isDirty, topicErrors, saving, isAutoSaving, topics, data?.collection?.id, selectedCollectionId, unitIdParam]);
 
   // 1. Tải hồ sơ khảo sát của đơn vị
   const loadDemandData = async (collId?: number) => {
     try {
       setLoading(true);
       const targetCollId = collId || selectedCollectionId;
-      const url = targetCollId ? `/api/training-demand?collectionId=${targetCollId}` : '/api/training-demand';
+      const params = new URLSearchParams();
+      if (targetCollId) params.set('collectionId', targetCollId.toString());
+      if (unitIdParam) params.set('unitId', unitIdParam);
+      const url = `/api/training-demand${params.toString() ? '?' + params.toString() : ''}`;
       const res = await fetch(url);
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Lỗi tải dữ liệu');
@@ -382,6 +390,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          unitId: unitIdParam || undefined,
           collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'SAVE_PROGRAM',
           programData: {
@@ -420,6 +429,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          unitId: unitIdParam || undefined,
           collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'DRAFT',
           programData: {
@@ -454,6 +464,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          unitId: unitIdParam || undefined,
           collectionId: data?.collection?.id || 1,
           action: 'DELETE_PROGRAM',
           programId
@@ -513,6 +524,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          unitId: unitIdParam || undefined,
           collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'SAVE_PROPOSALS',
           proposals
@@ -553,6 +565,7 @@ export default function UnitTrainingDemandPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          unitId: unitIdParam || undefined,
           collectionId: selectedCollectionId || data?.collection?.id || 1,
           action: 'SUBMIT_OFFICIAL'
         })
@@ -644,7 +657,7 @@ export default function UnitTrainingDemandPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
             <Link
-              href="/unit?tab=TASKS"
+              href={unitIdParam ? `/unit?tab=TASKS&unitId=${unitIdParam}` : "/unit?tab=TASKS"}
               className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
               title="Quay lại Trang chính đơn vị"
             >
@@ -1869,3 +1882,21 @@ export default function UnitTrainingDemandPage() {
     </div>
   );
 }
+
+export default function UnitTrainingDemandPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-slate-600 text-sm">Đang tải thông tin khảo sát nhu cầu đào tạo...</p>
+          </div>
+        </div>
+      }
+    >
+      <UnitTrainingDemandContent />
+    </React.Suspense>
+  );
+}
+

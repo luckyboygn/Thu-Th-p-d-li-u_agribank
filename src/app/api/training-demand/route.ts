@@ -24,17 +24,40 @@ export async function GET(req: NextRequest) {
     unitId = parseInt(searchParams.get('unitId')!);
   }
 
+  const db = getDatabase();
+
+  if (!unitId && isCentralAdmin(session)) {
+    const firstUnit = db.prepare('SELECT id FROM units ORDER BY id ASC LIMIT 1').get() as any;
+    unitId = firstUnit?.id || null;
+  }
+
   if (!unitId) {
     return NextResponse.json({ error: 'Không xác định được đơn vị.' }, { status: 400 });
   }
 
-  const db = getDatabase();
-
-  // Tìm collectionId (nếu không truyền thì lấy đợt OPEN mới nhất)
+  // Tìm collectionId (nếu không truyền thì ưu tiên đợt mà đơn vị đã có submission, hoặc đợt OPEN mới nhất)
   let collectionId = collectionIdStr ? parseInt(collectionIdStr) : null;
   if (!collectionId) {
-    const activeColl = db.prepare("SELECT id FROM collections WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
-    collectionId = activeColl?.id || null;
+    const unitSubColl = db.prepare(`
+      SELECT s.collection_id
+      FROM training_demand_submissions s
+      JOIN collections c ON s.collection_id = c.id
+      WHERE s.unit_id = ?
+      ORDER BY (c.status = 'OPEN') DESC, s.updated_at DESC, s.id DESC
+      LIMIT 1
+    `).get(unitId) as any;
+
+    if (unitSubColl?.collection_id) {
+      collectionId = unitSubColl.collection_id;
+    } else {
+      const activeColl = db.prepare("SELECT id FROM collections WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
+      collectionId = activeColl?.id || null;
+    }
+  }
+
+  if (!collectionId) {
+    const latestColl = db.prepare("SELECT id FROM collections ORDER BY id DESC LIMIT 1").get() as any;
+    collectionId = latestColl?.id || null;
   }
 
   // Lấy đơn vị
@@ -160,6 +183,38 @@ export async function GET(req: NextRequest) {
     `).get(submission.id) || null;
   }
 
+  // Đảm bảo submission luôn có receipt_code nếu đã có bản ghi biên nhận
+  if (submission && !submission.receipt_code) {
+    const rc = db.prepare(`
+      SELECT receipt_code FROM submission_receipts
+      WHERE target_type = 'TRAINING_DEMAND' AND target_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(submission.id) as any;
+    if (rc?.receipt_code) {
+      submission.receipt_code = rc.receipt_code;
+    }
+  }
+
+  // Tính toán summary tổng thể cho đơn vị
+  let totalInFrameworkParticipants = 0;
+  let totalInFrameworkTopics = 0;
+  for (const prog of programsWithDetails) {
+    totalInFrameworkParticipants += (prog.sum_participants || 0);
+    totalInFrameworkTopics += (prog.registered_topic_count || 0);
+  }
+  let totalProposalParticipants = 0;
+  if (proposals && Array.isArray(proposals)) {
+    for (const prop of proposals as any[]) {
+      totalProposalParticipants += (prop.participant_count || 0);
+    }
+  }
+  const summary = {
+    programCount: programsWithDetails.length,
+    topicCount: totalInFrameworkTopics,
+    proposalCount: Array.isArray(proposals) ? proposals.length : 0,
+    totalParticipants: totalInFrameworkParticipants + totalProposalParticipants
+  };
+
   return NextResponse.json({
     unit,
     collection,
@@ -169,6 +224,7 @@ export async function GET(req: NextRequest) {
     declaredPrograms: programsWithDetails,
     declaredPositions: positionsWithDetails,
     proposals,
+    summary,
     reopenInfo
   });
 }

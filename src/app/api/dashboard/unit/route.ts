@@ -16,11 +16,16 @@ export async function GET(req: NextRequest) {
     unitId = parseInt(searchParams.get('unitId')!);
   }
 
+  const db = getDatabase();
+
+  if (!unitId && session.role === 'SUPER_ADMIN') {
+    const firstUnit = db.prepare('SELECT id FROM units ORDER BY id ASC LIMIT 1').get() as any;
+    unitId = firstUnit?.id || null;
+  }
+
   if (!unitId) {
     return NextResponse.json({ error: 'Không tìm thấy thông tin đơn vị.' }, { status: 400 });
   }
-
-  const db = getDatabase();
 
   // Lấy đơn vị
   const unit = db.prepare('SELECT * FROM units WHERE id = ?').get(unitId) as any;
@@ -130,6 +135,54 @@ export async function GET(req: NextRequest) {
   const campaignSettingRow = db.prepare("SELECT value FROM system_settings WHERE key = 'active_campaign_task'").get() as any;
   const activeCampaignTask = campaignSettingRow?.value || 'AUTO';
 
+  // Lấy thông tin khảo sát đào tạo của đơn vị để giao diện chính luôn có đủ dữ liệu
+  const activeTrainingColl = allTrainingCollections.find(c => c.status === 'OPEN') || allTrainingCollections[0] || null;
+  let trainingSubmission: any = null;
+  let trainingSummary: any = null;
+
+  if (unitId) {
+    trainingSubmission = db.prepare(`
+      SELECT s.*, c.code as collection_code, c.title as collection_title, c.status as collection_status
+      FROM training_demand_submissions s
+      JOIN collections c ON s.collection_id = c.id
+      WHERE s.unit_id = ?
+      ORDER BY (c.status = 'OPEN') DESC, s.updated_at DESC, s.id DESC
+      LIMIT 1
+    `).get(unitId) as any;
+
+    if (trainingSubmission) {
+      if (!trainingSubmission.receipt_code) {
+        const rc = db.prepare(`
+          SELECT receipt_code FROM submission_receipts 
+          WHERE target_type = 'TRAINING_DEMAND' AND target_id = ?
+          ORDER BY id DESC LIMIT 1
+        `).get(trainingSubmission.id) as any;
+        if (rc?.receipt_code) trainingSubmission.receipt_code = rc.receipt_code;
+      }
+
+      const progCount = (db.prepare(`
+        SELECT COUNT(*) as c FROM training_demand_programs WHERE submission_id = ?
+      `).get(trainingSubmission.id) as any)?.c || 0;
+
+      const progSum = (db.prepare(`
+        SELECT COALESCE(SUM(dt.participant_count), 0) as s
+        FROM training_demand_program_topics dt
+        JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+        WHERE dp.submission_id = ?
+      `).get(trainingSubmission.id) as any)?.s || 0;
+
+      const propSum = (db.prepare(`
+        SELECT COALESCE(SUM(participant_count), 0) as s
+        FROM training_demand_proposals WHERE submission_id = ?
+      `).get(trainingSubmission.id) as any)?.s || 0;
+
+      trainingSummary = {
+        programCount: progCount,
+        totalParticipants: progSum + propSum
+      };
+    }
+  }
+
   return NextResponse.json({
     unit,
     exam,
@@ -141,6 +194,9 @@ export async function GET(req: NextRequest) {
     uploadHistory,
     deadlineExtension,
     reopenInfo,
-    activeCampaignTask
+    activeCampaignTask,
+    trainingSubmission,
+    trainingSummary,
+    activeTrainingCollection: activeTrainingColl
   });
 }
