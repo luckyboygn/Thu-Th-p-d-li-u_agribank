@@ -19,6 +19,7 @@
     "test:receipt-fix": "npx tsx scripts/test_receipt_participants_suite.ts",
     "test:unit-export": "npx tsx scripts/test_unit_excel_export_suite.ts",
     "test:task-separation": "npx tsx scripts/test_task_separation_suite.ts",
+    "test:classification": "npx tsx scripts/test_admin_campaign_classification.ts",
     "test:hierarchy": "npx tsx scripts/test_unit_hierarchy_suite.ts",
     "test:master-lifecycle": "npx tsx scripts/test_master_db_lifecycle_suite.ts",
     "test:audit-logs": "npx tsx scripts/test_audit_logs_suite.ts",

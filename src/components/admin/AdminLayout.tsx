@@ -116,7 +116,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       hasChevron: false,
     },
     {
-      title: 'Kỳ thi nghiệp vụ cán bộ',
+      title: 'Quản lý các đợt thu thập',
       href: '/admin/exams',
       icon: Calendar,
       exact: false,

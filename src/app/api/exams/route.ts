@@ -25,7 +25,13 @@ export async function GET(req: NextRequest) {
                 AND LOWER(title) NOT LIKE '%đào tạo%' 
                 AND LOWER(title) NOT LIKE '%nhu cầu%' 
                 AND LOWER(code) NOT LIKE 'ks%'`;
-  } else if (taskType) {
+  } else if (taskType === 'TRAINING_DEMAND') {
+    query += ` WHERE task_type = 'TRAINING_DEMAND' 
+                OR LOWER(title) LIKE '%khảo sát%' 
+                OR LOWER(title) LIKE '%đào tạo%' 
+                OR LOWER(title) LIKE '%nhu cầu%' 
+                OR LOWER(code) LIKE 'ks%'`;
+  } else if (taskType && taskType !== 'ALL') {
     query += ` WHERE task_type = ?`;
     params.push(taskType);
   }
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Mã kỳ thi và Tên kỳ thi là bắt buộc.' }, { status: 400 });
     }
 
-    const assignedTaskType = taskType || 'CANDIDATE_EXAM';
+    const assignedTaskType = taskType === 'TRAINING_DEMAND' ? 'TRAINING_DEMAND' : 'CANDIDATE_EXAM';
     const db = getDatabase();
     const result = db.prepare(`
       INSERT INTO exams (code, title, description, status, start_date, end_date, start_at, end_at, task_type)
@@ -67,6 +73,26 @@ export async function POST(req: NextRequest) {
       endAt || null,
       assignedTaskType
     );
+
+    // Nếu là đợt Khảo sát nhu cầu đào tạo, tự động đồng bộ sang bảng collections để phân hệ Đào tạo quản lý
+    if (assignedTaskType === 'TRAINING_DEMAND') {
+      try {
+        db.prepare(`
+          INSERT OR IGNORE INTO collections (code, title, description, status, start_date, end_date, start_at, end_at, task_type)
+          VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?, 'TRAINING_DEMAND')
+        `).run(
+          code.trim().toUpperCase(),
+          title.trim(),
+          description || '',
+          startDate || null,
+          endDate || null,
+          startAt || null,
+          endAt || null
+        );
+      } catch (colErr) {
+        console.error('Error auto-syncing collection:', colErr);
+      }
+    }
 
     logAudit({
       userId: session.id,
@@ -97,7 +123,7 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const { id, title, description, status, startDate, endDate, startAt, endAt } = await req.json();
+    const { id, title, description, status, startDate, endDate, startAt, endAt, taskType } = await req.json();
     if (!id) {
       return NextResponse.json({ error: 'Thiếu id kỳ thi.' }, { status: 400 });
     }
@@ -116,7 +142,8 @@ export async function PUT(req: NextRequest) {
           start_date = COALESCE(?, start_date),
           end_date = COALESCE(?, end_date),
           start_at = COALESCE(?, start_at),
-          end_at = COALESCE(?, end_at)
+          end_at = COALESCE(?, end_at),
+          task_type = COALESCE(?, task_type)
       WHERE id = ?
     `).run(
       title !== undefined ? title : null,
@@ -126,8 +153,28 @@ export async function PUT(req: NextRequest) {
       endDate !== undefined ? endDate : null,
       startAt !== undefined ? startAt : null,
       endAt !== undefined ? endAt : null,
+      taskType !== undefined ? taskType : null,
       id
     );
+
+    if (taskType === 'TRAINING_DEMAND') {
+      try {
+        db.prepare(`
+          INSERT OR IGNORE INTO collections (code, title, description, status, start_date, end_date, start_at, end_at, task_type)
+          VALUES (?, ?, ?, 'OPEN', ?, ?, ?, ?, 'TRAINING_DEMAND')
+        `).run(
+          oldExam.code,
+          title || oldExam.title,
+          description || oldExam.description,
+          startDate || oldExam.start_date,
+          endDate || oldExam.end_date,
+          startAt || oldExam.start_at,
+          endAt || oldExam.end_at
+        );
+      } catch (colErr) {
+        console.error('Error auto-syncing collection on update:', colErr);
+      }
+    }
 
     // Audit UPDATE_DEADLINE nếu startAt hoặc endAt thay đổi
     if ((startAt !== undefined && startAt !== oldExam.start_at) || (endAt !== undefined && endAt !== oldExam.end_at)) {
