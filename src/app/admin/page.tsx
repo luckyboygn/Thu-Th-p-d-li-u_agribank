@@ -89,7 +89,7 @@ const UNIT_TYPE_LABELS: Record<string, string> = {
   SUBSIDIARY: 'Công ty con / ĐVSN'
 };
 
-type SortField = 'unitCode' | 'unitName' | 'totalRows' | 'candidateStatus' | 'trainingParticipantsCount' | 'trainingStatus' | 'overallStatus';
+type SortField = 'unitCode' | 'unitName' | 'totalRows' | 'candidateStatus' | 'trainingParticipantsCount' | 'trainingStatus' | 'overallStatus' | 'status';
 type SortOrder = 'asc' | 'desc';
 
 function AdminDashboardContent() {
@@ -281,6 +281,17 @@ function AdminDashboardContent() {
     setCurrentPage(1);
   };
 
+  const isSelectedExamTraining = useMemo(() => {
+    const ex = exams.find(e => e.id === selectedExamId);
+    if (!ex) return false;
+    const title = (ex.title || '').toLowerCase();
+    const code = (ex.code || '').toLowerCase();
+    return ex.task_type === 'TRAINING_DEMAND' || title.includes('khảo sát') || title.includes('đào tạo') || title.includes('nhu cầu') || code.startsWith('ks');
+  }, [exams, selectedExamId]);
+
+  const isTrainingOnly = categoryFilter === 'TRAINING_DEMAND' || (categoryFilter === 'ALL' && isSelectedExamTraining) || (activeCampaignTask === 'TRAINING_DEMAND' && isSelectedExamTraining);
+  const isCandidateOnly = categoryFilter === 'CANDIDATE_LIST' || (categoryFilter === 'ALL' && !isSelectedExamTraining);
+
   // Logic lọc dữ liệu đơn vị theo bộ lọc
   const filteredUnits = useMemo(() => {
     return unitList.filter((u) => {
@@ -293,21 +304,21 @@ function AdminDashboardContent() {
       if (regionFilter !== 'ALL' && u.region !== regionFilter) return false;
       if (typeFilter !== 'ALL' && u.unitType !== typeFilter) return false;
 
-      if (categoryFilter === 'CANDIDATE_LIST') {
-        if (statusFilter === 'SUBMITTED') return u.candidateStatus === 'GỬI_CHÍNH_THỨC' || u.candidateStatus === 'HỢP_LỆ';
-        if (statusFilter === 'ERROR') return u.candidateStatus === 'CÓ_LỖI';
-        if (statusFilter === 'NOT_YET') return u.candidateStatus === 'CHƯA_UPLOAD';
-        return true;
-      }
-
-      if (categoryFilter === 'TRAINING_DEMAND') {
+      if (isTrainingOnly) {
         if (statusFilter === 'SUBMITTED') return u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC';
         if (statusFilter === 'DRAFT') return u.trainingStatus === 'ĐANG_SOẠN' || u.trainingStatus === 'MỞ_LẠI';
         if (statusFilter === 'NOT_YET') return u.trainingStatus === 'CHƯA_KÊ_KHAI';
         return true;
       }
 
-      // ALL (Tổng hợp)
+      if (isCandidateOnly) {
+        if (statusFilter === 'SUBMITTED') return u.candidateStatus === 'GỬI_CHÍNH_THỨC' || u.candidateStatus === 'HỢP_LỆ';
+        if (statusFilter === 'ERROR') return u.candidateStatus === 'CÓ_LỖI';
+        if (statusFilter === 'NOT_YET') return u.candidateStatus === 'CHƯA_UPLOAD';
+        return true;
+      }
+
+      // ALL (Tổng hợp cả 2 nhiệm vụ)
       if (statusFilter === 'ALL') return true;
       if (statusFilter === 'SUBMITTED') return u.overallStatus === 'ĐÃ_NỘP';
       if (statusFilter === 'ERROR') return u.overallStatus === 'CÓ_LỖI';
@@ -316,7 +327,7 @@ function AdminDashboardContent() {
 
       return true;
     });
-  }, [unitList, searchUnit, statusFilter, categoryFilter]);
+  }, [unitList, searchUnit, statusFilter, categoryFilter, isTrainingOnly, isCandidateOnly]);
 
   // Sắp xếp danh sách đơn vị đã lọc
   const sortedUnits = useMemo(() => {
@@ -337,11 +348,19 @@ function AdminDashboardContent() {
         cmp = a.trainingStatus.localeCompare(b.trainingStatus);
       } else if (sortField === 'overallStatus') {
         cmp = a.overallStatus.localeCompare(b.overallStatus);
+      } else if (sortField === 'status') {
+        if (isTrainingOnly) {
+          cmp = a.trainingStatus.localeCompare(b.trainingStatus) || (b.trainingParticipantsCount - a.trainingParticipantsCount);
+        } else if (isCandidateOnly) {
+          cmp = a.candidateStatus.localeCompare(b.candidateStatus) || (b.validRows - a.validRows);
+        } else {
+          cmp = a.overallStatus.localeCompare(b.overallStatus);
+        }
       }
       return sortOrder === 'asc' ? cmp : -cmp;
     });
     return list;
-  }, [filteredUnits, sortField, sortOrder]);
+  }, [filteredUnits, sortField, sortOrder, isTrainingOnly, isCandidateOnly]);
 
   // Phân trang
   const effectivePageSize = pageSize === -1 ? sortedUnits.length : pageSize;
@@ -354,28 +373,61 @@ function AdminDashboardContent() {
 
   // Xuất danh sách đơn vị chưa nộp (A4)
   const handleExportUnsubmittedUnits = () => {
-    const unsubmitted = unitList.filter(u => 
-      u.overallStatus === 'CHƯA_NỘP' || 
-      u.candidateStatus === 'CHƯA_UPLOAD' || 
-      u.trainingStatus === 'CHƯA_KÊ_KHAI'
-    );
+    let unsubmitted: UnitRow[] = [];
+    let headers: string[] = [];
+    let rows: any[][] = [];
 
-    if (unsubmitted.length === 0) {
-      alert(`Tất cả ${totalUnits} đơn vị đều đã nộp hồ sơ!`);
-      return;
+    if (isTrainingOnly) {
+      unsubmitted = unitList.filter(u => u.trainingStatus === 'CHƯA_KÊ_KHAI' || u.trainingStatus === 'ĐANG_SOẠN');
+      if (unsubmitted.length === 0) {
+        alert(`Tất cả ${totalUnits} đơn vị đều đã nộp hồ sơ khảo sát đào tạo!`);
+        return;
+      }
+      headers = ['STT', 'Mã Đơn vị', 'Tên Đơn vị', 'Tài khoản', 'Trạng thái Khảo sát', 'Số lượt đã soạn'];
+      rows = unsubmitted.map((u, i) => [
+        i + 1,
+        `"${u.unitCode}"`,
+        `"${u.unitName}"`,
+        `"${u.userAccount || ''}"`,
+        `"${u.trainingStatus === 'CHƯA_KÊ_KHAI' ? 'Chưa kê khai' : 'Đang soạn'}"`,
+        u.trainingParticipantsCount || 0
+      ]);
+    } else if (isCandidateOnly) {
+      unsubmitted = unitList.filter(u => u.candidateStatus === 'CHƯA_UPLOAD' || u.candidateStatus === 'CÓ_LỖI');
+      if (unsubmitted.length === 0) {
+        alert(`Tất cả ${totalUnits} đơn vị đều đã nộp danh sách thí sinh!`);
+        return;
+      }
+      headers = ['STT', 'Mã Đơn vị', 'Tên Đơn vị', 'Tài khoản', 'Trạng thái Thí sinh', 'Số lỗi phát hiện'];
+      rows = unsubmitted.map((u, i) => [
+        i + 1,
+        `"${u.unitCode}"`,
+        `"${u.unitName}"`,
+        `"${u.userAccount || ''}"`,
+        `"${u.candidateStatus === 'CHƯA_UPLOAD' ? 'Chưa nộp file' : 'Có lỗi dữ liệu'}"`,
+        u.errorRows || 0
+      ]);
+    } else {
+      unsubmitted = unitList.filter(u => 
+        u.overallStatus === 'CHƯA_NỘP' || 
+        u.candidateStatus === 'CHƯA_UPLOAD' || 
+        u.trainingStatus === 'CHƯA_KÊ_KHAI'
+      );
+      if (unsubmitted.length === 0) {
+        alert(`Tất cả ${totalUnits} đơn vị đều đã nộp hồ sơ!`);
+        return;
+      }
+      headers = ['STT', 'Mã Đơn vị', 'Tên Đơn vị', 'Tài khoản', 'Danh sách Thí sinh', 'Nhu cầu Đào tạo', 'Trạng thái chung'];
+      rows = unsubmitted.map((u, i) => [
+        i + 1,
+        `"${u.unitCode}"`,
+        `"${u.unitName}"`,
+        `"${u.userAccount || ''}"`,
+        `"${u.candidateStatus === 'CHƯA_UPLOAD' ? 'Chưa nộp file' : u.candidateStatus === 'GỬI_CHÍNH_THỨC' ? 'Đã gửi' : u.candidateStatus === 'CÓ_LỖI' ? 'Có lỗi' : 'Hợp lệ'}"`,
+        `"${u.trainingStatus === 'CHƯA_KÊ_KHAI' ? 'Chưa đăng ký' : u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC' ? 'Đã gửi' : 'Đang soạn'}"`,
+        `"${u.overallStatus === 'CHƯA_NỘP' ? 'Chưa hoàn thành' : u.overallStatus === 'ĐÃ_NỘP' ? 'Hoàn thành' : 'Đang xử lý'}"`
+      ]);
     }
-
-    // Xuất file CSV định dạng UTF-8 với BOM để Excel đọc đúng tiếng Việt
-    const headers = ['STT', 'Mã Đơn vị', 'Tên Đơn vị', 'Tài khoản', 'Danh sách Cán bộ thi', 'Nhu cầu Đào tạo', 'Trạng thái chung'];
-    const rows = unsubmitted.map((u, i) => [
-      i + 1,
-      `"${u.unitCode}"`,
-      `"${u.unitName}"`,
-      `"${u.userAccount || ''}"`,
-      `"${u.candidateStatus === 'CHƯA_UPLOAD' ? 'Chưa nộp file' : u.candidateStatus === 'GỬI_CHÍNH_THỨC' ? 'Đã gửi' : u.candidateStatus === 'CÓ_LỖI' ? 'Có lỗi' : 'Hợp lệ'}"`,
-      `"${u.trainingStatus === 'CHƯA_KÊ_KHAI' ? 'Chưa đăng ký' : u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC' ? 'Đã gửi' : 'Đang soạn'}"`,
-      `"${u.overallStatus === 'CHƯA_NỘP' ? 'Chưa hoàn thành' : u.overallStatus === 'ĐÃ_NỘP' ? 'Hoàn thành' : 'Đang xử lý'}"`
-    ]);
 
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -388,16 +440,6 @@ function AdminDashboardContent() {
     document.body.removeChild(link);
   };
 
-  const isSelectedExamTraining = useMemo(() => {
-    const ex = exams.find(e => e.id === selectedExamId);
-    if (!ex) return false;
-    const title = (ex.title || '').toLowerCase();
-    const code = (ex.code || '').toLowerCase();
-    return title.includes('khảo sát') || title.includes('đào tạo') || title.includes('nhu cầu') || code.startsWith('ks');
-  }, [exams, selectedExamId]);
-
-  const isTrainingOnly = categoryFilter === 'TRAINING_DEMAND' || activeCampaignTask === 'TRAINING_DEMAND' || isSelectedExamTraining;
-  const isCandidateOnly = categoryFilter === 'CANDIDATE_LIST' || (activeCampaignTask === 'CANDIDATE_EXAM' && !isSelectedExamTraining);
   const isViewer = currentUser?.role === 'VIEWER';
 
   const totalUnits = summary?.totalUnits || unitList.length || 155;
@@ -858,20 +900,17 @@ function AdminDashboardContent() {
                   </div>
                 </th>
                 <th
-                  onClick={() => handleSort('candidateStatus')}
-                  className="px-4 py-3.5 w-48 text-center cursor-pointer hover:text-slate-900"
+                  onClick={() => handleSort('status')}
+                  className="px-4 py-3.5 min-w-[200px] text-center cursor-pointer hover:text-slate-900"
                 >
-                  <div className="flex items-center justify-center gap-1">
-                    <span>Trạng thái Thí sinh</span>
-                    <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                  </div>
-                </th>
-                <th
-                  onClick={() => handleSort('trainingStatus')}
-                  className="px-4 py-3.5 w-48 text-center cursor-pointer hover:text-slate-900"
-                >
-                  <div className="flex items-center justify-center gap-1">
-                    <span>Trạng thái Đào tạo</span>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>
+                      {isTrainingOnly
+                        ? 'Trạng thái Khảo sát Đào tạo'
+                        : isCandidateOnly
+                        ? 'Trạng thái Nộp Thí sinh'
+                        : 'Trạng thái Nộp Dữ liệu'}
+                    </span>
                     <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
                   </div>
                 </th>
@@ -881,7 +920,7 @@ function AdminDashboardContent() {
             <tbody className="divide-y divide-slate-100">
               {paginatedUnits.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-12 text-slate-400 text-xs">
+                  <td colSpan={6} className="text-center py-12 text-slate-400 text-xs">
                     Không tìm thấy đơn vị nào phù hợp với bộ lọc hiện tại.
                   </td>
                 </tr>
@@ -889,64 +928,146 @@ function AdminDashboardContent() {
                 paginatedUnits.map((u, i) => {
                   const itemIndex = pageSize === -1 ? i + 1 : (currentPage - 1) * pageSize + i + 1;
 
-                  // Hiển thị trạng thái Cán bộ (Chuẩn tiếng Việt kèm icon)
-                  let candBadge = (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
-                      <XCircle className="w-3 h-3 text-slate-400" />
-                      <span>Chưa nộp</span>
-                    </span>
-                  );
-                  if (u.candidateStatus === 'GỬI_CHÍNH_THỨC') {
-                    candBadge = (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        <span>Đã nộp ({u.validRows})</span>
-                      </span>
-                    );
-                  } else if (u.candidateStatus === 'MỞ_LẠI') {
-                    candBadge = (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                        <RefreshCw className="w-3 h-3 text-amber-600" />
-                        <span>Đã nộp (mở lại)</span>
-                      </span>
-                    );
-                  } else if (u.candidateStatus === 'CÓ_LỖI') {
-                    candBadge = (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-100 text-[#A81D22] border border-rose-300">
-                        <AlertTriangle className="w-3 h-3 text-rose-600" />
-                        <span>Có {u.errorRows} lỗi</span>
-                      </span>
-                    );
-                  } else if (u.candidateStatus === 'HỢP_LỆ') {
-                    candBadge = (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                        <CheckCircle2 className="w-3 h-3 text-blue-600" />
-                        <span>Hợp lệ ({u.validRows})</span>
-                      </span>
-                    );
-                  }
+                  // Hiển thị trạng thái gộp theo đợt đang xem (Khảo sát Đào tạo hoặc Kỳ thi / Thí sinh)
+                  let statusBadge = null;
+                  let statusTimestamp: string | null = null;
+                  let statusSubtext: React.ReactNode = null;
 
-                  // Hiển thị trạng thái Nhu cầu Đào tạo (Chuẩn tiếng Việt kèm icon)
-                  let trainBadge = (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
-                      <XCircle className="w-3 h-3 text-slate-400" />
-                      <span>Chưa nộp</span>
-                    </span>
-                  );
-                  if (u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC') {
-                    trainBadge = (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        <span>Đã nộp ({u.trainingParticipantsCount})</span>
-                      </span>
-                    );
-                  } else if (u.trainingStatus === 'ĐANG_SOẠN' || u.trainingStatus === 'MỞ_LẠI') {
-                    trainBadge = (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
-                        <Clock className="w-3 h-3 text-amber-600" />
-                        <span>Đang soạn ({u.trainingParticipantsCount})</span>
-                      </span>
-                    );
+                  if (isTrainingOnly) {
+                    // 1. Chế độ Khảo sát Nhu cầu Đào tạo
+                    if (u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Đã nộp ({u.trainingParticipantsCount.toLocaleString()} lượt)</span>
+                        </span>
+                      );
+                      if (u.trainingProgramsCount > 0) {
+                        statusSubtext = (
+                          <span className="text-[10px] text-emerald-700 font-semibold">
+                            {u.trainingProgramsCount} khung chương trình
+                          </span>
+                        );
+                      }
+                      statusTimestamp = u.trainingSubmittedAt || null;
+                    } else if (u.trainingStatus === 'MỞ_LẠI') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                          <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Đã nộp (mở lại)</span>
+                        </span>
+                      );
+                      statusTimestamp = u.trainingSubmittedAt || null;
+                    } else if (u.trainingStatus === 'ĐANG_SOẠN') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Đang soạn ({u.trainingParticipantsCount} lượt)</span>
+                        </span>
+                      );
+                    } else {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                          <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Chưa nộp</span>
+                        </span>
+                      );
+                    }
+                  } else if (isCandidateOnly) {
+                    // 2. Chế độ Kỳ thi / Danh sách Cán bộ
+                    if (u.candidateStatus === 'GỬI_CHÍNH_THỨC') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Đã nộp ({u.validRows.toLocaleString()} thí sinh)</span>
+                        </span>
+                      );
+                      statusTimestamp = u.candidateSubmittedAt || null;
+                    } else if (u.candidateStatus === 'MỞ_LẠI') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                          <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Đã nộp (mở lại)</span>
+                        </span>
+                      );
+                      statusTimestamp = u.candidateSubmittedAt || null;
+                    } else if (u.candidateStatus === 'CÓ_LỖI') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-[#A81D22] border border-rose-300">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Có {u.errorRows} lỗi</span>
+                        </span>
+                      );
+                    } else if (u.candidateStatus === 'HỢP_LỆ') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Hợp lệ ({u.validRows} thí sinh)</span>
+                        </span>
+                      );
+                    } else {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                          <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Chưa nộp</span>
+                        </span>
+                      );
+                    }
+                  } else {
+                    // 3. Chế độ Tổng hợp (Cả 2 nhiệm vụ)
+                    if (u.candidateStatus === 'GỬI_CHÍNH_THỨC' && u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Đã nộp đủ cả 2</span>
+                        </span>
+                      );
+                      statusSubtext = (
+                        <span className="text-[10px] text-slate-500">
+                          Thí sinh: {u.validRows} | Đào tạo: {u.trainingParticipantsCount} lượt
+                        </span>
+                      );
+                      statusTimestamp = u.trainingSubmittedAt || u.candidateSubmittedAt || null;
+                    } else if (u.trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Đã nộp Khảo sát ({u.trainingParticipantsCount} lượt)</span>
+                        </span>
+                      );
+                      statusSubtext = <span className="text-[10px] text-slate-400">Thí sinh: Chưa nộp</span>;
+                      statusTimestamp = u.trainingSubmittedAt || null;
+                    } else if (u.candidateStatus === 'GỬI_CHÍNH_THỨC' || u.candidateStatus === 'HỢP_LỆ') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Đã nộp Thí sinh ({u.validRows})</span>
+                        </span>
+                      );
+                      statusSubtext = <span className="text-[10px] text-slate-400">Đào tạo: Chưa kê khai</span>;
+                      statusTimestamp = u.candidateSubmittedAt || null;
+                    } else if (u.candidateStatus === 'CÓ_LỖI') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-[#A81D22] border border-rose-300">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Có {u.errorRows} lỗi thí sinh</span>
+                        </span>
+                      );
+                    } else if (u.trainingStatus === 'ĐANG_SOẠN') {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Đang soạn ({u.trainingParticipantsCount} lượt)</span>
+                        </span>
+                      );
+                    } else {
+                      statusBadge = (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                          <XCircle className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Chưa nộp</span>
+                        </span>
+                      );
+                    }
                   }
 
                   return (
@@ -972,23 +1093,13 @@ function AdminDashboardContent() {
                         {u.unitCode}
                       </td>
                       <td className="px-4 py-3.5 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          {candBadge}
-                          {u.candidateSubmittedAt && (
+                        <div className="flex flex-col items-center justify-center gap-1">
+                          {statusBadge}
+                          {statusSubtext}
+                          {statusTimestamp && (
                             <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
                               <Calendar className="w-2.5 h-2.5" />
-                              {new Date(u.candidateSubmittedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          {trainBadge}
-                          {u.trainingSubmittedAt && (
-                            <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                              <Calendar className="w-2.5 h-2.5" />
-                              {new Date(u.trainingSubmittedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                              {new Date(statusTimestamp).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
                             </span>
                           )}
                         </div>

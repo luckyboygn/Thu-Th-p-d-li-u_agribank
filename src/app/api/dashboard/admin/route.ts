@@ -22,14 +22,7 @@ export async function GET(req: NextRequest) {
 
   // 1. Lấy danh sách tất cả các đợt (Collections & Exams)
   const collections = db.prepare('SELECT id, code, title, status, created_at FROM collections ORDER BY id DESC').all() as any[];
-  const exams = db.prepare('SELECT id, code, title, status, created_at FROM exams ORDER BY id DESC').all() as any[];
-
-  // Xác định activeCollectionId: chỉ chọn nếu có chỉ định hoặc có đợt OPEN
-  let activeCollectionId = collectionIdParam ? parseInt(collectionIdParam) : null;
-  if (!activeCollectionId) {
-    const activeColl = collections.find(c => c.status === 'OPEN');
-    activeCollectionId = activeColl ? activeColl.id : null;
-  }
+  const exams = db.prepare('SELECT id, code, title, status, created_at, task_type FROM exams ORDER BY id DESC').all() as any[];
 
   // Xác định activeExamId: chỉ chọn nếu có chỉ định hoặc có kỳ thi OPEN
   let activeExamId = examIdParam ? parseInt(examIdParam) : null;
@@ -37,9 +30,25 @@ export async function GET(req: NextRequest) {
     const activeEx = exams.find(e => e.status === 'OPEN');
     activeExamId = activeEx ? activeEx.id : null;
   }
+  const selectedExam = activeExamId ? (exams.find(e => e.id === activeExamId) || null) : null;
+
+  // Xác định activeCollectionId: chỉ chọn nếu có chỉ định hoặc có đợt OPEN
+  let activeCollectionId = collectionIdParam ? parseInt(collectionIdParam) : null;
+  if (!activeCollectionId) {
+    if (selectedExam) {
+      // Tự động liên kết collection nếu kỳ thi đang chọn là đợt khảo sát đào tạo
+      const matchingColl = collections.find(c => c.code === selectedExam.code || c.title === selectedExam.title);
+      if (matchingColl) {
+        activeCollectionId = matchingColl.id;
+      }
+    }
+    if (!activeCollectionId) {
+      const activeColl = collections.find(c => c.status === 'OPEN');
+      activeCollectionId = activeColl ? activeColl.id : null;
+    }
+  }
 
   const selectedCollection = activeCollectionId ? (collections.find(c => c.id === activeCollectionId) || null) : null;
-  const selectedExam = activeExamId ? (exams.find(e => e.id === activeExamId) || null) : null;
 
   // 2. Lấy toàn bộ Đơn vị kèm thông tin phân cấp & vùng miền
   const allUnits = db.prepare('SELECT id, unit_code, unit_name, user_account, status, unit_type, region, parent_unit_id FROM units ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC').all() as any[];
@@ -59,10 +68,19 @@ export async function GET(req: NextRequest) {
   const trainingSubmissions = activeCollectionId ? db.prepare(`
     SELECT ts.id, ts.unit_id, ts.version, ts.status, ts.submitted_at, ts.updated_at,
            (SELECT COUNT(*) FROM training_demand_programs WHERE submission_id = ts.id) as program_count,
-           (SELECT COALESCE(SUM(dt.participant_count), 0)
-            FROM training_demand_program_topics dt
-            JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-            WHERE dp.submission_id = ts.id) as total_training_participants
+           (
+             COALESCE((
+               SELECT SUM(dt.participant_count)
+               FROM training_demand_program_topics dt
+               JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+               WHERE dp.submission_id = ts.id
+             ), 0) +
+             COALESCE((
+               SELECT SUM(participant_count)
+               FROM training_demand_proposals
+               WHERE submission_id = ts.id
+             ), 0)
+           ) as total_training_participants
     FROM training_demand_submissions ts
     WHERE ts.collection_id = ? AND ts.id IN (
       SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
@@ -125,15 +143,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Trạng thái tổng hợp dựa trên formFilter
+    // Trạng thái tổng hợp dựa trên formFilter hoặc đợt đang chọn
+    const isTrainingSelected = formFilterParam === 'TRAINING_DEMAND' || (selectedExam && (selectedExam.task_type === 'TRAINING_DEMAND' || selectedExam.code.startsWith('KS') || selectedExam.title.toLowerCase().includes('khảo sát')));
+    const isCandidateSelected = formFilterParam === 'CANDIDATE_LIST' || (selectedExam && selectedExam.task_type === 'CANDIDATE_EXAM');
+
     let overallStatus: 'CHƯA_NỘP' | 'ĐÃ_NỘP' | 'CÓ_LỖI' | 'ĐANG_SOẠN' | 'MỞ_LẠI' = 'CHƯA_NỘP';
 
-    if (formFilterParam === 'TRAINING_DEMAND') {
+    if (isTrainingSelected) {
       if (trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC') overallStatus = 'ĐÃ_NỘP';
       else if (trainingStatus === 'MỞ_LẠI') overallStatus = 'MỞ_LẠI';
       else if (trainingStatus === 'ĐANG_SOẠN') overallStatus = 'ĐANG_SOẠN';
       else overallStatus = 'CHƯA_NỘP';
-    } else if (formFilterParam === 'CANDIDATE_LIST') {
+    } else if (isCandidateSelected) {
       if (candidateStatus === 'GỬI_CHÍNH_THỨC' || candidateStatus === 'HỢP_LỆ') overallStatus = 'ĐÃ_NỘP';
       else if (candidateStatus === 'MỞ_LẠI') overallStatus = 'MỞ_LẠI';
       else if (candidateStatus === 'CÓ_LỖI') overallStatus = 'CÓ_LỖI';
