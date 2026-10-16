@@ -36,6 +36,7 @@ import {
   Mail,
   FileCheck
 } from 'lucide-react';
+import BatchProxyUploadModal from '@/components/BatchProxyUploadModal';
 
 interface SummaryData {
   collectionId: number;
@@ -138,6 +139,7 @@ export default function AdminTrainingDemandPage() {
   const [allUnitsStatusFilter, setAllUnitsStatusFilter] = useState<'ALL' | 'SUBMITTED' | 'DRAFT' | 'NOT_SUBMITTED'>('ALL');
 
   // Tab 3: Nộp hộ file Excel cho đơn vị (Nhận qua Email)
+  const [showBatchModal, setShowBatchModal] = useState(false);
   const [showProxyModal, setShowProxyModal] = useState(false);
   const [proxyUnitId, setProxyUnitId] = useState<number | ''>('');
   const [proxyFile, setProxyFile] = useState<File | null>(null);
@@ -1247,12 +1249,20 @@ export default function AdminTrainingDemandPage() {
               {selectedUnitId === 'ALL' ? (
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => setShowBatchModal(true)}
+                    className="inline-flex items-center gap-2 bg-gradient-to-r from-emerald-800 to-teal-800 hover:from-emerald-900 hover:to-teal-900 text-white px-3.5 py-2 rounded-lg text-sm font-extrabold shadow-sm transition-all active:scale-95 cursor-pointer border border-emerald-600/40"
+                    title="Tải lên và tự động nhận diện nộp hộ cùng lúc nhiều file Excel Mẫu số 04"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+                    <span>Nộp Hộ Hàng Loạt (Nhiều File)</span>
+                  </button>
+                  <button
                     onClick={() => openProxyModal()}
-                    className="inline-flex items-center gap-2 bg-[#005F3E] hover:bg-[#004d32] text-white px-3.5 py-2 rounded-lg text-sm font-bold shadow-xs transition-all active:scale-95 cursor-pointer"
+                    className="inline-flex items-center gap-2 bg-[#005F3E] hover:bg-[#004d32] text-white px-3 py-2 rounded-lg text-sm font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
                     title="Nộp hộ file Excel nhận qua Email cho bất kỳ đơn vị nào"
                   >
                     <UploadCloud className="w-4 h-4" />
-                    <span>Nộp Hộ File Excel Đơn Vị</span>
+                    <span>Nộp Hộ 1 Đơn Vị</span>
                   </button>
                   <a
                     href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
@@ -2929,6 +2939,24 @@ export default function AdminTrainingDemandPage() {
           )}
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ADMIN NỘP HỘ HÀNG LOẠT NHIỀU FILE EXCEL (BATCH PROXY UPLOAD) */}
+      {/* ========================================================================= */}
+      <BatchProxyUploadModal
+        isOpen={showBatchModal}
+        onClose={() => setShowBatchModal(false)}
+        defaultCollectionId={summary?.collectionId}
+        onSuccess={() => {
+          loadSummaryAndBaseData();
+          if (selectedUnitId) {
+            fetch(`/api/training-reports?type=BY_UNIT&unitId=${selectedUnitId}`)
+              .then(r => r.ok ? r.json() : null)
+              .then(uData => { if (uData) setUnitReportData(uData); })
+              .catch(() => {});
+          }
+        }}
+      />
 
       {/* ========================================================================= */}
       {/* MODAL: ADMIN NỘP HỘ FILE EXCEL KHẢO SÁT ĐÀO TẠO CHO ĐƠN VỊ (NHẬN QUA EMAIL) */}

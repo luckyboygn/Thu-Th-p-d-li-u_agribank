@@ -25,8 +25,10 @@ import {
   Lock,
   ChevronLeft,
   ChevronRight,
-  Calendar
+  Calendar,
+  UploadCloud
 } from 'lucide-react';
+import BatchProxyUploadModal from '@/components/BatchProxyUploadModal';
 import { getErrorLabel } from '@/lib/error-labels';
 
 interface AdminSummary {
@@ -121,6 +123,9 @@ function AdminDashboardContent() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(25);
+
+  // Modal nộp hộ hàng loạt file Excel
+  const [showBatchModal, setShowBatchModal] = useState(false);
 
   // Modal chi tiết đơn vị
   const [showUnitDetailModal, setShowUnitDetailModal] = useState(false);
@@ -808,6 +813,17 @@ function AdminDashboardContent() {
               ))}
             </select>
 
+            {/* Nút Nộp hộ nhiều file Excel khảo sát đào tạo */}
+            <button
+              type="button"
+              onClick={() => setShowBatchModal(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Tải lên và tự động nhận diện nộp hộ cùng lúc nhiều file Excel Mẫu số 04 từ các đơn vị"
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+              <span>Nộp hộ nhiều file Excel</span>
+            </button>
+
             {/* Nút Xuất danh sách đơn vị chưa nộp (A4) */}
             <button
               type="button"
@@ -1416,6 +1432,16 @@ function AdminDashboardContent() {
           </div>
         </div>
       )}
+
+      {/* Modal nộp hộ hàng loạt file Excel khảo sát đào tạo */}
+      <BatchProxyUploadModal
+        isOpen={showBatchModal}
+        onClose={() => setShowBatchModal(false)}
+        defaultCollectionId={selectedCollectionId}
+        onSuccess={() => {
+          loadData(selectedExamId || undefined, selectedCollectionId || undefined, categoryFilter);
+        }}
+      />
     </div>
   );
 }
