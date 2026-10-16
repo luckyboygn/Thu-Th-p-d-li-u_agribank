@@ -33,9 +33,11 @@ export interface ParseExcelResult {
     groupName: string;
     topicCount: number;
     totalParticipants: number;
+    totalCompleted?: number;
   }>;
   totalInFrameworkTopics: number;
   totalInFrameworkParticipants: number;
+  totalCompletedParticipants: number;
   totalProposalParticipants: number;
   grandTotalParticipants: number;
   warnings: string[];
@@ -131,6 +133,7 @@ export function parseTrainingDemandExcel(
       let currentProgramId: number | null = null;
       let colMap: {
         topicIdx?: number;
+        positionIdx?: number;
         completedIdx?: number;
         countIdx?: number;
         namesIdx?: number;
@@ -157,12 +160,22 @@ export function parseTrainingDemandExcel(
           upperFirst.includes('KHUNG CHƯƠNG TRÌNH') ||
           upperFirst.includes('KHUNG CHUONG TRINH')
         ) {
-          const normFirst = normalizeText(firstCells);
-          const matchedProg = allOfficialPrograms.find(p => {
-            const normPCode = normalizeText(p.code);
-            const normPName = normalizeText(p.name);
-            return normFirst.includes(normPCode) || normFirst.includes(normPName) || (normPCode && normFirst.includes(normPCode.replace(/[^a-z0-9]/g, '')));
-          });
+          // Ưu tiên khớp chính xác mã Phụ lục: PHỤ LỤC I.1, PHỤ LỤC III.1, etc.
+          const plMatch = firstCells.match(/PHỤ LỤC\s+([IVXLCDM]+)\.(\d+)/i) || firstCells.match(/PHU LUC\s+([IVXLCDM]+)\.(\d+)/i);
+          let matchedProg: any = null;
+          if (plMatch) {
+            const plCode = `PL_${plMatch[1]}.${plMatch[2]}`;
+            matchedProg = allOfficialPrograms.find(p => p.code === plCode || normalizeText(p.code) === normalizeText(plCode));
+          }
+
+          if (!matchedProg) {
+            const normFirst = normalizeText(firstCells);
+            matchedProg = allOfficialPrograms.find(p => {
+              const normPCode = normalizeText(p.code);
+              const normPName = normalizeText(p.name);
+              return normFirst.includes(normPCode) || normFirst.includes(normPName) || (normPCode && normFirst.includes(normPCode.replace(/[^a-z0-9]/g, '')));
+            });
+          }
 
           if (matchedProg) {
             currentProgramId = matchedProg.id;
@@ -183,6 +196,8 @@ export function parseTrainingDemandExcel(
             const nCell = normalizeText(String(cell));
             if ((nCell.includes('ten chuyen de') || nCell === 'chuyen de' || nCell.includes('chuyen de dao tao')) && !nCell.includes('hoan thanh') && !nCell.includes('chung chi')) {
               colMap!.topicIdx = idx;
+            } else if ((nCell.startsWith('vi tri') || nCell.includes('chuc danh')) && !nCell.includes('chung chi') && !nCell.includes('dao tao')) {
+              colMap!.positionIdx = idx;
             } else if (nCell.includes('da hoc') && !nCell.includes('chuyen de')) {
               colMap!.completedIdx = idx;
             } else if (nCell.includes('dang ky') && (nCell.includes('2027') || nCell.includes('so luong') || nCell === 'sl' || nCell.includes('hoc vien')) && !nCell.includes('ho ten') && !nCell.includes('danh sach')) {
@@ -251,6 +266,8 @@ export function parseTrainingDemandExcel(
           const attendees = colMap.namesIdx !== undefined ? String(row[colMap.namesIdx] || '').trim() : '';
           const rowNote = colMap.notesIdx !== undefined ? String(row[colMap.notesIdx] || '').trim() : '';
           const rowProgVal = colMap.progIdx !== undefined ? String(row[colMap.progIdx] || '').trim() : '';
+          const rawPos = colMap.positionIdx !== undefined ? String(row[colMap.positionIdx] || '').trim() : '';
+          const normPos = normalizeText(rawPos);
 
           let rowProgId = currentProgramId;
           if (rowProgVal) {
@@ -270,10 +287,20 @@ export function parseTrainingDemandExcel(
           if (matchedList && matchedList.length > 0) {
             if (matchedList.length === 1) {
               matchedTopic = matchedList[0];
-            } else if (rowProgId) {
-              matchedTopic = matchedList.find(t => t.program_id === rowProgId) || matchedList[0];
             } else {
-              matchedTopic = matchedList[0];
+              // Có nhiều chuyên đề trùng tên -> phân biệt bằng program_id và position_code
+              if (rowProgId && normPos) {
+                matchedTopic = matchedList.find(t => t.program_id === rowProgId && normalizeText(t.position_code) === normPos);
+              }
+              if (!matchedTopic && rowProgId) {
+                matchedTopic = matchedList.find(t => t.program_id === rowProgId);
+              }
+              if (!matchedTopic && normPos) {
+                matchedTopic = matchedList.find(t => normalizeText(t.position_code) === normPos);
+              }
+              if (!matchedTopic) {
+                matchedTopic = matchedList[0];
+              }
             }
           }
 
@@ -313,23 +340,28 @@ export function parseTrainingDemandExcel(
 
   // Tổng hợp kết quả
   let totalInFrameworkParticipants = 0;
+  let totalCompletedParticipants = 0;
   let totalInFrameworkTopics = 0;
   const programsSummary: any[] = [];
 
   for (const [pId, pData] of programsDataMap.entries()) {
     let pSum = 0;
+    let pCompletedSum = 0;
     for (const tData of pData.topics.values()) {
       pSum += tData.count;
+      pCompletedSum += (tData.completedCount || 0);
       totalInFrameworkTopics++;
     }
     totalInFrameworkParticipants += pSum;
+    totalCompletedParticipants += pCompletedSum;
     programsSummary.push({
       programId: pId,
       programCode: pData.program?.code || '',
       programName: pData.program?.name || '',
       groupName: pData.program?.group_name || '',
       topicCount: pData.topics.size,
-      totalParticipants: pSum
+      totalParticipants: pSum,
+      totalCompleted: pCompletedSum
     });
   }
 
@@ -343,6 +375,7 @@ export function parseTrainingDemandExcel(
     programsSummary,
     totalInFrameworkTopics,
     totalInFrameworkParticipants,
+    totalCompletedParticipants,
     totalProposalParticipants,
     grandTotalParticipants,
     warnings

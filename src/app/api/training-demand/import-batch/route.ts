@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     const allUnits = db.prepare('SELECT id, unit_code, unit_name FROM units ORDER BY CAST(unit_code AS INTEGER) ASC').all() as any[];
     const allOfficialPrograms = db.prepare('SELECT id, code, name, group_name FROM training_programs').all() as any[];
     const allOfficialTopics = db.prepare(`
-      SELECT t.id, t.program_id, t.topic_name, t.delivery_method, t.duration,
+      SELECT t.id, t.program_id, t.topic_name, t.position_code, t.delivery_method, t.duration,
              p.code as program_code, p.name as program_name
       FROM training_program_topics t
       JOIN training_programs p ON t.program_id = p.id
@@ -90,23 +90,30 @@ export async function POST(req: NextRequest) {
         let readError = null;
 
         try {
-          const ab = await file.arrayBuffer();
-          const buf = Buffer.from(ab);
-          const wb = xlsx.read(buf, { type: 'buffer' });
+          let wb: xlsx.WorkBook;
+          if (file.name.toLowerCase().endsWith('.csv')) {
+            const text = await file.text();
+            wb = xlsx.read(text, { type: 'string' });
+          } else {
+            const ab = await file.arrayBuffer();
+            const buf = Buffer.from(ab);
+            wb = xlsx.read(buf, { type: 'buffer' });
+          }
           parseRes = parseTrainingDemandExcel(wb, allOfficialPrograms, allOfficialTopics);
         } catch (err: any) {
           readError = err.message || 'Lỗi định dạng file Excel không đọc được.';
         }
 
         const grandTotal = parseRes?.grandTotalParticipants || 0;
+        const totalCompleted = parseRes?.totalCompletedParticipants || 0;
         let warning = matchRes.warning || null;
 
-        if (!warning && grandTotal === 0) {
-          warning = 'File không có số lượng học viên đăng ký nào (> 0 học viên).';
+        if (!warning && grandTotal === 0 && totalCompleted === 0) {
+          warning = 'File không có số lượng học viên đăng ký hoặc đã học nào (> 0 học viên).';
         }
 
         // Điều kiện để được nộp tự động: Nhận diện đơn vị tin cậy 100% VÀ có dữ liệu > 0
-        const canImport = !readError && matchRes.status === 'MATCHED' && grandTotal > 0;
+        const canImport = !readError && matchRes.status === 'MATCHED' && (grandTotal > 0 || totalCompleted > 0);
 
         fileAnalysisResults.push({
           fileIndex: i,
@@ -238,9 +245,15 @@ export async function POST(req: NextRequest) {
         // Bóc tách nội dung Excel
         let parseRes = null;
         try {
-          const ab = await file.arrayBuffer();
-          const buf = Buffer.from(ab);
-          const wb = xlsx.read(buf, { type: 'buffer' });
+          let wb: xlsx.WorkBook;
+          if (file.name.toLowerCase().endsWith('.csv')) {
+            const text = await file.text();
+            wb = xlsx.read(text, { type: 'string' });
+          } else {
+            const ab = await file.arrayBuffer();
+            const buf = Buffer.from(ab);
+            wb = xlsx.read(buf, { type: 'buffer' });
+          }
           parseRes = parseTrainingDemandExcel(wb, allOfficialPrograms, allOfficialTopics);
         } catch (err: any) {
           failedCount++;
@@ -254,14 +267,14 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        if (parseRes.grandTotalParticipants <= 0) {
+        if (parseRes.grandTotalParticipants <= 0 && (parseRes.totalCompletedParticipants || 0) <= 0) {
           skippedCount++;
           executionResults.push({
             fileName: file.name,
             unitCode: unit.unit_code,
             unitName: unit.unit_name,
             status: 'SKIPPED',
-            message: 'File không có số lượng học viên đăng ký nào (> 0 học viên).'
+            message: 'File không có số lượng học viên đăng ký hoặc đã học nào (> 0 học viên).'
           });
           continue;
         }
