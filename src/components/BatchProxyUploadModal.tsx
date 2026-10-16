@@ -32,7 +32,7 @@ interface AnalyzedItem {
   file: File;
   fileName: string;
   fileSize: number;
-  matchStatus: 'EXACT_CODE' | 'EXACT_NAME' | 'STRONG_MATCH' | 'CONFLICT' | 'NOT_FOUND' | 'INVALID_EXCEL';
+  matchStatus: 'MATCHED' | 'EXACT_CODE' | 'EXACT_NAME' | 'STRONG_MATCH' | 'CONFLICT' | 'NOT_FOUND' | 'INVALID_EXCEL' | 'AMBIGUOUS';
   confidence: 'HIGH' | 'MEDIUM' | 'NONE';
   reasons: string[];
   unit: MatchedUnit | null;
@@ -41,10 +41,16 @@ interface AnalyzedItem {
   parsedSummary?: {
     programsCount: number;
     participantsCount: number;
-    positionsCount: number;
-    notesCount: number;
+    positionsCount?: number;
+    notesCount?: number;
   };
   parseError?: string;
+  executionResult?: {
+    status: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+    message?: string;
+    receiptCode?: string;
+    totalParticipants?: number;
+  };
 }
 
 interface BatchProxyUploadModalProps {
@@ -150,29 +156,52 @@ export default function BatchProxyUploadModal({
         throw new Error(data.error || 'Lỗi khi phân tích danh sách file');
       }
 
+      const analyzedList = data.results || data.analyzed || [];
       const analyzedMap = new Map<string, any>();
-      (data.analyzed || []).forEach((item: any) => {
+      analyzedList.forEach((item: any) => {
         analyzedMap.set(item.fileName, item);
       });
 
       const items: AnalyzedItem[] = fileList.map((file, idx) => {
         const info = analyzedMap.get(file.name) || {};
-        const isSafe = ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH'].includes(info.matchStatus);
+        const matchedUnit = info.matchedUnit || info.unit || null;
+        const rawStatus = info.matchStatus || 'NOT_FOUND';
+        const err = info.readError || info.parseError;
+        const isSafe = (rawStatus === 'MATCHED' || ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH'].includes(rawStatus)) && !err;
         
+        const unitObj: MatchedUnit | null = matchedUnit ? {
+          id: matchedUnit.id,
+          code: matchedUnit.unitCode || matchedUnit.code,
+          name: matchedUnit.unitName || matchedUnit.name,
+          shortName: matchedUnit.unitName || matchedUnit.name
+        } : null;
+
+        const summary = info.summary || info.parsedSummary;
+        const parsedSummaryObj = summary ? {
+          programsCount: summary.programCount ?? summary.programsCount ?? 0,
+          participantsCount: summary.totalParticipants ?? summary.participantsCount ?? 0,
+          positionsCount: summary.topicCount ?? summary.positionsCount ?? 0,
+          notesCount: summary.proposalCount ?? summary.notesCount ?? 0
+        } : undefined;
+
+        const reasons = info.reasons && info.reasons.length > 0
+          ? info.reasons
+          : (info.warning ? [info.warning] : []);
+
         return {
           id: `${file.name}_${idx}`,
           file,
           fileName: file.name,
           fileSize: file.size,
-          matchStatus: info.matchStatus || 'NOT_FOUND',
-          confidence: info.confidence || 'NONE',
-          reasons: info.reasons || [],
-          unit: info.unit || null,
-          assignedUnitId: info.unit?.id || null,
+          matchStatus: rawStatus,
+          confidence: info.confidence || (isSafe ? 'HIGH' : 'NONE'),
+          reasons,
+          unit: unitObj,
+          assignedUnitId: unitObj?.id || null,
           // An toàn tuyệt đối: Chỉ file khớp chuẩn và không có lỗi mới tự động tick chọn!
-          selected: isSafe && !info.parseError,
-          parsedSummary: info.parsedSummary,
-          parseError: info.parseError
+          selected: isSafe && !err,
+          parsedSummary: parsedSummaryObj,
+          parseError: err
         };
       });
 
@@ -215,7 +244,9 @@ export default function BatchProxyUploadModal({
           ...item,
           assignedUnitId: uId,
           unit: matchedU ? { id: matchedU.id, code: matchedU.unit_code, name: matchedU.unit_name, shortName: matchedU.unit_name } : null,
-          // Nếu đã gán thủ công và không có lỗi parse thì cho phép chọn
+          matchStatus: uId !== null ? 'MATCHED' : 'NOT_FOUND',
+          reasons: uId !== null ? ['Đã được Admin chỉ định đơn vị trực tiếp'] : ['Chưa chọn đơn vị'],
+          // Nếu đã gán thủ công và không có lỗi parse thì tự động chọn
           selected: uId !== null && !item.parseError ? true : false
         };
       }
@@ -252,7 +283,8 @@ export default function BatchProxyUploadModal({
 
       const assignments = selectedList.map(item => ({
         fileName: item.fileName,
-        unitId: item.assignedUnitId
+        unitId: item.assignedUnitId,
+        selected: true
       }));
 
       fd.append('assignments', JSON.stringify(assignments));
@@ -268,6 +300,26 @@ export default function BatchProxyUploadModal({
       if (!res.ok) {
         throw new Error(data.error || 'Có lỗi khi tiến hành nộp hộ');
       }
+
+      const resList = data.results || [];
+      const resultMap = new Map<string, any>();
+      resList.forEach((r: any) => resultMap.set(r.fileName, r));
+
+      setAnalyzedItems(prev => prev.map(item => {
+        const r = resultMap.get(item.fileName);
+        if (r) {
+          return {
+            ...item,
+            executionResult: {
+              status: r.status,
+              message: r.message,
+              receiptCode: r.receiptCode,
+              totalParticipants: r.summary?.totalParticipants
+            }
+          };
+        }
+        return item;
+      }));
 
       setExecutionResult({
         successCount: data.successCount || 0,
@@ -288,13 +340,13 @@ export default function BatchProxyUploadModal({
   // Thống kê số lượng
   const totalFiles = analyzedItems.length;
   const readyCount = analyzedItems.filter(it => 
-    ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH'].includes(it.matchStatus) && !it.parseError
+    ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH', 'MATCHED'].includes(it.matchStatus) && !it.parseError
   ).length;
   const warningCount = totalFiles - readyCount;
   const selectedCount = analyzedItems.filter(it => it.selected && it.assignedUnitId).length;
 
   const filteredItems = analyzedItems.filter(item => {
-    const isSafe = ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH'].includes(item.matchStatus) && !item.parseError;
+    const isSafe = ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH', 'MATCHED'].includes(item.matchStatus) && !item.parseError;
     if (filterView === 'READY') return isSafe;
     if (filterView === 'WARNING') return !isSafe;
     return true;
@@ -476,21 +528,65 @@ export default function BatchProxyUploadModal({
 
               {/* Thông báo kết quả thực thi nộp hộ */}
               {executionResult && (
-                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 flex items-start gap-3 text-emerald-950">
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
-                  <div className="text-xs space-y-1">
-                    <p className="font-extrabold text-sm text-emerald-900">
-                      Đã hoàn tất nộp hộ thành công cho {executionResult.successCount} đơn vị!
-                    </p>
-                    {executionResult.failedCount > 0 && (
-                      <p className="font-bold text-amber-800">
-                        Có {executionResult.failedCount} file thất bại cần kiểm tra lại.
-                      </p>
-                    )}
-                    <p className="text-emerald-800">
-                      Dữ liệu khảo sát và trạng thái đơn vị trên Dashboard đã được tự động cập nhật sang <strong>ĐÃ GỬI CHÍNH THỨC</strong>.
-                    </p>
-                  </div>
+                <div>
+                  {executionResult.successCount > 0 && executionResult.failedCount === 0 ? (
+                    <div className="p-4 rounded-xl bg-emerald-50 border-2 border-emerald-500 flex items-start gap-3.5 text-emerald-950 shadow-sm animate-in fade-in duration-300">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <CheckCircle2 className="w-6 h-6" />
+                      </div>
+                      <div className="text-xs space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-black text-sm text-emerald-900 tracking-tight">
+                            HOÀN TẤT NỘP HỘ THÀNH CÔNG CHO {executionResult.successCount} ĐƠN VỊ!
+                          </p>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-200 text-emerald-900 border border-emerald-300">
+                            Thành công 100%
+                          </span>
+                        </div>
+                        <p className="text-emerald-800 leading-relaxed font-medium">
+                          Hệ thống đã lưu trữ dữ liệu khảo sát và tự động đồng bộ trạng thái của các chi nhánh trên Dashboard chính sang <strong className="text-emerald-950 font-bold bg-emerald-100/80 px-1.5 py-0.5 rounded">ĐÃ GỬI CHÍNH THỨC</strong> kèm mã biên nhận điện tử.
+                        </p>
+                      </div>
+                    </div>
+                  ) : executionResult.successCount > 0 && executionResult.failedCount > 0 ? (
+                    <div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-500 flex items-start gap-3.5 text-amber-950 shadow-sm animate-in fade-in duration-300">
+                      <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <AlertTriangle className="w-6 h-6" />
+                      </div>
+                      <div className="text-xs space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-black text-sm text-amber-900 tracking-tight">
+                            NỘP HỘ THÀNH CÔNG {executionResult.successCount} ĐƠN VỊ - CÓ {executionResult.failedCount} FILE THẤT BẠI
+                          </p>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-200 text-amber-900 border border-amber-300">
+                            Một phần thành công
+                          </span>
+                        </div>
+                        <p className="text-amber-800 leading-relaxed font-medium">
+                          Các đơn vị thành công đã được cập nhật sang <strong className="text-emerald-800 font-bold">ĐÃ GỬI CHÍNH THỨC</strong> trên hệ thống. Với các file thất bại, vui lòng kiểm tra nguyên nhân chi tiết tại từng dòng bên dưới để xử lý.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-xl bg-rose-50 border-2 border-rose-500 flex items-start gap-3.5 text-rose-950 shadow-sm animate-in fade-in duration-300">
+                      <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <XCircle className="w-6 h-6" />
+                      </div>
+                      <div className="text-xs space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-black text-sm text-rose-900 tracking-tight">
+                            CHƯA NỘP ĐƯỢC FILE NÀO (0/{totalFiles} THÀNH CÔNG)
+                          </p>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-rose-200 text-rose-900 border border-rose-300">
+                            Thất bại / Bỏ qua
+                          </span>
+                        </div>
+                        <p className="text-rose-800 leading-relaxed font-medium">
+                          Không có file nào được nộp hộ thành công. Vui lòng kiểm tra lại xem các file đã được tích chọn chưa, hoặc kiểm tra xem chi nhánh đích đã được gán chính xác hay file có lỗi định dạng hay không.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -517,7 +613,7 @@ export default function BatchProxyUploadModal({
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredItems.map((item) => {
-                        const isSafe = ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH'].includes(item.matchStatus) && !item.parseError;
+                        const isSafe = ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH', 'MATCHED'].includes(item.matchStatus) && !item.parseError;
                         const isConflict = item.matchStatus === 'CONFLICT';
                         const isNotFound = item.matchStatus === 'NOT_FOUND';
                         const isInvalidExcel = item.matchStatus === 'INVALID_EXCEL' || !!item.parseError;
@@ -526,7 +622,15 @@ export default function BatchProxyUploadModal({
                           <tr
                             key={item.id}
                             className={`hover:bg-slate-50 transition-colors ${
-                              item.selected ? 'bg-emerald-50/40' : !isSafe ? 'bg-amber-50/20' : ''
+                              item.executionResult?.status === 'SUCCESS' 
+                                ? 'bg-emerald-50/60'
+                                : item.executionResult?.status === 'FAILED'
+                                ? 'bg-rose-50/50'
+                                : item.selected 
+                                ? 'bg-emerald-50/30' 
+                                : !isSafe 
+                                ? 'bg-amber-50/20' 
+                                : ''
                             }`}
                           >
                             {/* Checkbox */}
@@ -535,7 +639,7 @@ export default function BatchProxyUploadModal({
                                 type="checkbox"
                                 checked={item.selected}
                                 onChange={() => handleToggleSelect(item.id)}
-                                disabled={item.assignedUnitId === null || !!item.parseError}
+                                disabled={item.assignedUnitId === null || !!item.parseError || item.executionResult?.status === 'SUCCESS'}
                                 className="rounded border-slate-300 text-emerald-700 focus:ring-emerald-600 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                               />
                             </td>
@@ -567,7 +671,8 @@ export default function BatchProxyUploadModal({
                                   <select
                                     value={item.assignedUnitId || ''}
                                     onChange={(e) => handleAssignUnit(item.id, e.target.value)}
-                                    className="text-[10px] text-slate-500 bg-white border border-slate-200 rounded px-1.5 py-0.5 mt-0.5 cursor-pointer max-w-[200px]"
+                                    disabled={item.executionResult?.status === 'SUCCESS'}
+                                    className="text-[10px] text-slate-500 bg-white border border-slate-200 rounded px-1.5 py-0.5 mt-0.5 cursor-pointer max-w-[200px] disabled:opacity-60"
                                   >
                                     <option value={item.unit.id}>Đổi đơn vị khác...</option>
                                     {units.map(u => (
@@ -586,7 +691,8 @@ export default function BatchProxyUploadModal({
                                   <select
                                     value={item.assignedUnitId || ''}
                                     onChange={(e) => handleAssignUnit(item.id, e.target.value)}
-                                    className="text-xs font-bold text-slate-800 bg-white border border-amber-300 rounded px-2 py-1 shadow-2xs cursor-pointer max-w-[220px]"
+                                    disabled={item.executionResult?.status === 'SUCCESS'}
+                                    className="text-xs font-bold text-slate-800 bg-white border border-amber-300 rounded px-2 py-1 shadow-2xs cursor-pointer max-w-[220px] disabled:opacity-60"
                                   >
                                     <option value="">-- Chọn đơn vị chỉ định --</option>
                                     {units.map(u => (
@@ -599,15 +705,52 @@ export default function BatchProxyUploadModal({
                               )}
                             </td>
 
-                            {/* Trạng thái nhận diện & Cảnh báo an toàn */}
+                            {/* Trạng thái nhận diện & Cảnh báo an toàn / Kết quả nộp */}
                             <td className="py-2.5 px-3">
-                              {isSafe ? (
+                              {item.executionResult ? (
+                                item.executionResult.status === 'SUCCESS' ? (
+                                  <div className="space-y-1">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-extrabold bg-emerald-600 text-white shadow-xs">
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      ĐÃ NỘP HỘ THÀNH CÔNG
+                                    </span>
+                                    {item.executionResult.receiptCode && (
+                                      <div className="text-[10px] text-emerald-800 font-bold font-mono">
+                                        Mã biên nhận: {item.executionResult.receiptCode}
+                                      </div>
+                                    )}
+                                    <div className="text-[10px] text-emerald-700">
+                                      Trạng thái: <strong>ĐÃ GỬI CHÍNH THỨC</strong>
+                                    </div>
+                                  </div>
+                                ) : item.executionResult.status === 'FAILED' ? (
+                                  <div className="space-y-1">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-extrabold bg-rose-600 text-white shadow-xs">
+                                      <XCircle className="w-3.5 h-3.5" />
+                                      NỘP HỘ THẤT BẠI
+                                    </span>
+                                    <p className="text-[10px] text-rose-800 font-medium">
+                                      {item.executionResult.message || 'Lỗi khi ghi dữ liệu'}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-1">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-extrabold bg-amber-500 text-white shadow-xs">
+                                      <AlertTriangle className="w-3.5 h-3.5" />
+                                      ĐÃ BỎ QUA
+                                    </span>
+                                    <p className="text-[10px] text-amber-800">
+                                      {item.executionResult.message || 'Chưa tích chọn nộp'}
+                                    </p>
+                                  </div>
+                                )
+                              ) : isSafe ? (
                                 <div className="space-y-0.5">
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                     <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                     {item.matchStatus === 'EXACT_CODE' && 'Khớp chính xác mã đơn vị'}
                                     {item.matchStatus === 'EXACT_NAME' && 'Khớp chính xác tên chi nhánh'}
-                                    {item.matchStatus === 'STRONG_MATCH' && 'Nhận diện chuẩn xác'}
+                                    {(item.matchStatus === 'STRONG_MATCH' || item.matchStatus === 'MATCHED') && 'Nhận diện chuẩn xác'}
                                   </span>
                                   {item.reasons.length > 0 && (
                                     <p className="text-[10px] text-slate-500">
@@ -714,14 +857,23 @@ export default function BatchProxyUploadModal({
             {totalFiles > 0 && (
               <button
                 type="button"
-                onClick={handleExecuteUpload}
-                disabled={isExecuting || selectedCount === 0 || isAnalyzing}
-                className="px-5 py-2 rounded-xl bg-[#005F3E] hover:bg-[#004d32] text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={executionResult && executionResult.successCount > 0 && executionResult.failedCount === 0 ? onClose : handleExecuteUpload}
+                disabled={isExecuting || (!executionResult && selectedCount === 0) || isAnalyzing}
+                className={`px-5 py-2 rounded-xl text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  executionResult && executionResult.successCount > 0 && executionResult.failedCount === 0
+                    ? 'bg-emerald-700 hover:bg-emerald-800'
+                    : 'bg-[#005F3E] hover:bg-[#004d32]'
+                }`}
               >
                 {isExecuting ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
                     <span>Đang nộp hộ dữ liệu...</span>
+                  </>
+                ) : executionResult && executionResult.successCount > 0 && executionResult.failedCount === 0 ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Hoàn tất ({executionResult.successCount} đơn vị) - Đóng</span>
                   </>
                 ) : (
                   <>

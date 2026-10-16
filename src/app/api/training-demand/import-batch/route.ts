@@ -113,11 +113,19 @@ export async function POST(req: NextRequest) {
           fileName: file.name,
           fileSize: file.size,
           matchedUnit: matchRes.unit,
+          unit: matchRes.unit ? {
+            id: matchRes.unit.id,
+            code: matchRes.unit.unitCode,
+            name: matchRes.unit.unitName,
+            shortName: matchRes.unit.unitName
+          } : null,
           matchStatus: matchRes.status,
           matchMethod: matchRes.matchedBy,
           confidence: matchRes.confidence,
           warning,
+          reasons: warning ? [warning] : (matchRes.matchedBy ? [`Khớp đơn vị theo ${matchRes.matchedBy}`] : []),
           readError,
+          parseError: readError,
           summary: parseRes ? {
             programCount: parseRes.programsSummary.length,
             topicCount: parseRes.totalInFrameworkTopics,
@@ -125,6 +133,12 @@ export async function POST(req: NextRequest) {
             proposalCount: parseRes.proposalsList.length,
             proposalParticipants: parseRes.totalProposalParticipants,
             totalParticipants: grandTotal
+          } : null,
+          parsedSummary: parseRes ? {
+            programsCount: parseRes.programsSummary.length,
+            participantsCount: grandTotal,
+            positionsCount: parseRes.totalInFrameworkTopics,
+            notesCount: parseRes.proposalsList.length
           } : null,
           programsPreview: parseRes ? parseRes.programsSummary.slice(0, 3) : [],
           canImport
@@ -140,7 +154,8 @@ export async function POST(req: NextRequest) {
         totalFiles: files.length,
         validCount,
         warningCount,
-        results: fileAnalysisResults
+        results: fileAnalysisResults,
+        analyzed: fileAnalysisResults
       });
     }
 
@@ -179,8 +194,8 @@ export async function POST(req: NextRequest) {
         const file = files[i];
         const assigned = assignmentsMap.get(file.name);
 
-        // Nếu admin bỏ chọn file này hoặc không có cấu hình nộp
-        if (assigned && !assigned.selected) {
+        // Nếu admin chủ động bỏ chọn file này
+        if (assigned && assigned.selected === false) {
           skippedCount++;
           executionResults.push({
             fileName: file.name,
@@ -292,10 +307,10 @@ export async function POST(req: NextRequest) {
 
           const insertDemandTopicStmt = db.prepare(`
             INSERT INTO training_demand_program_topics (
-              demand_program_id, program_topic_id, participant_count,
+              demand_program_id, program_topic_id, participant_count, completed_count,
               topic_name_snapshot, delivery_method_snapshot, duration_snapshot,
               attendees, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
 
           for (const [pId, pData] of parseRes.programsDataMap.entries()) {
@@ -307,6 +322,7 @@ export async function POST(req: NextRequest) {
                 demandProgramId,
                 tId,
                 tData.count,
+                tData.completedCount || 0,
                 tData.topicInfo.topic_name || '',
                 tData.topicInfo.delivery_method || '',
                 tData.topicInfo.duration || '',

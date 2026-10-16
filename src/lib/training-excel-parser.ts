@@ -3,6 +3,7 @@ import { normalizeText } from './unit-matcher';
 
 export interface ParsedTopicData {
   count: number;
+  completedCount?: number;
   topicInfo: any;
   attendees?: string;
   notes?: string;
@@ -130,6 +131,7 @@ export function parseTrainingDemandExcel(
       let currentProgramId: number | null = null;
       let colMap: {
         topicIdx?: number;
+        completedIdx?: number;
         countIdx?: number;
         namesIdx?: number;
         progIdx?: number;
@@ -181,6 +183,8 @@ export function parseTrainingDemandExcel(
             const nCell = normalizeText(String(cell));
             if ((nCell.includes('ten chuyen de') || nCell === 'chuyen de' || nCell.includes('chuyen de dao tao')) && !nCell.includes('hoan thanh') && !nCell.includes('chung chi')) {
               colMap!.topicIdx = idx;
+            } else if (nCell.includes('da hoc') && !nCell.includes('chuyen de')) {
+              colMap!.completedIdx = idx;
             } else if (nCell.includes('dang ky') && (nCell.includes('2027') || nCell.includes('so luong') || nCell === 'sl' || nCell.includes('hoc vien')) && !nCell.includes('ho ten') && !nCell.includes('danh sach')) {
               colMap!.countIdx = idx;
             } else if (nCell.includes('ho ten') || nCell.includes('danh sach')) {
@@ -234,8 +238,15 @@ export function parseTrainingDemandExcel(
             if (!isNaN(parsed) && parsed > 0) count = parsed;
           }
 
-          // Bỏ qua chuyên đề không có nhu cầu (> 0)
-          if (count <= 0) continue;
+          // Lấy số lượng đã học (nếu có trong file)
+          let completedCount = 0;
+          if (colMap.completedIdx !== undefined && row[colMap.completedIdx] !== undefined) {
+            const parsedComp = parseInt(String(row[colMap.completedIdx]).replace(/[^0-9]/g, ''));
+            if (!isNaN(parsedComp) && parsedComp > 0) completedCount = parsedComp;
+          }
+
+          // Bỏ qua chuyên đề không có nhu cầu (> 0) và chưa học (> 0)
+          if (count <= 0 && completedCount <= 0) continue;
 
           const attendees = colMap.namesIdx !== undefined ? String(row[colMap.namesIdx] || '').trim() : '';
           const rowNote = colMap.notesIdx !== undefined ? String(row[colMap.notesIdx] || '').trim() : '';
@@ -278,6 +289,7 @@ export function parseTrainingDemandExcel(
 
             programsDataMap.get(pId)!.topics.set(matchedTopic.id, {
               count,
+              completedCount,
               topicInfo: matchedTopic,
               attendees,
               notes: rowNote
