@@ -326,7 +326,8 @@ export async function GET(req: NextRequest) {
              p.code as program_code, p.name as program_name, p.group_name,
              (SELECT COUNT(*) FROM training_program_topics WHERE program_id = p.id) as total_available_topics,
              (SELECT COUNT(*) FROM training_demand_program_topics WHERE demand_program_id = dp.id AND participant_count > 0) as registered_topic_count,
-             (SELECT COALESCE(SUM(participant_count), 0) FROM training_demand_program_topics WHERE demand_program_id = dp.id) as sum_participants
+             (SELECT COALESCE(SUM(participant_count), 0) FROM training_demand_program_topics WHERE demand_program_id = dp.id) as sum_participants,
+             (SELECT COALESCE(SUM(completed_count), 0) FROM training_demand_program_topics WHERE demand_program_id = dp.id) as sum_completed
       FROM training_demand_programs dp
       JOIN training_programs p ON dp.program_id = p.id
       WHERE dp.submission_id = ?
@@ -335,7 +336,10 @@ export async function GET(req: NextRequest) {
 
     const getProgramTopicsStmt = db.prepare(`
       SELECT dt.id as demand_topic_id, dt.program_topic_id, dt.participant_count,
-             t.topic_name, t.target_audience, t.delivery_method, t.duration, t.display_order
+             COALESCE(dt.completed_count, 0) as completed_count,
+             t.topic_name, t.position_code, t.target_audience, t.delivery_method, t.duration,
+             t.learning_path, t.competency, t.certificate_requirement,
+             t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint, t.display_order
       FROM training_demand_program_topics dt
       JOIN training_program_topics t ON dt.program_topic_id = t.id
       WHERE dt.demand_program_id = ?
@@ -359,7 +363,10 @@ export async function GET(req: NextRequest) {
 
     const programRecords = db.prepare(`
       SELECT p.id as program_id, p.code as program_code, p.name as program_name, p.group_name,
-             t.id as topic_id, t.topic_name, t.delivery_method, t.duration,
+             t.id as topic_id, t.topic_name, t.position_code, t.delivery_method, t.duration,
+             t.learning_path, t.competency, t.certificate_requirement,
+             t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint,
+             COALESCE(dt.completed_count, 0) as completed_count,
              dt.participant_count
       FROM training_demand_programs dp
       JOIN training_programs p ON dp.program_id = p.id

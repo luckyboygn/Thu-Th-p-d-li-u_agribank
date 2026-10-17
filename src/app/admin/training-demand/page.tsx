@@ -1508,6 +1508,8 @@ export default function AdminTrainingDemandPage() {
                 ? unitDeclaredPrograms.reduce((sum: number, p: any) => sum + (p.sum_participants || 0), 0)
                 : unitPositionRecords.reduce((sum: number, r: any) => sum + (r.participant_count || 0), 0);
 
+              const totalCompletedParticipants = unitDeclaredPrograms.reduce((sum: number, p: any) => sum + (p.sum_completed || 0), 0);
+
               const totalRegisteredTopics = unitDeclaredPrograms.length > 0
                 ? unitDeclaredPrograms.reduce((sum: number, p: any) => sum + (p.registered_topic_count || 0), 0)
                 : new Set(unitPositionRecords.map((r: any) => r.topic_id)).size;
@@ -1524,6 +1526,7 @@ export default function AdminTrainingDemandPage() {
                   group_name,
                   programs,
                   totalParticipants: programs.reduce((sum: number, p: any) => sum + (p.sum_participants || 0), 0),
+                  totalCompleted: programs.reduce((sum: number, p: any) => sum + (p.sum_completed || 0), 0),
                   totalTopics: programs.reduce((sum: number, p: any) => sum + (p.registered_topic_count || 0), 0)
                 }));
               })();
@@ -1716,10 +1719,15 @@ export default function AdminTrainingDemandPage() {
 
                     <div className="bg-white p-4 rounded-xl border border-emerald-300 shadow-xs bg-gradient-to-br from-white to-emerald-50/50 flex items-center justify-between">
                       <div>
-                        <div className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider">Tổng Lượt Người ĐK</div>
+                        <div className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider">Đăng Ký Học Năm 2027</div>
                         <div className="text-2xl font-black text-[#005F3E] mt-0.5">
                           {totalRegisteredParticipants.toLocaleString('vi-VN')} <span className="text-xs font-bold text-emerald-800">lượt</span>
                         </div>
+                        {totalCompletedParticipants > 0 && (
+                          <div className="text-[11px] font-bold text-blue-700 mt-0.5">
+                            Đã học: {totalCompletedParticipants.toLocaleString('vi-VN')} lượt
+                          </div>
+                        )}
                       </div>
                       <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl">
                         <Users className="w-5 h-5" />
@@ -1787,8 +1795,13 @@ export default function AdminTrainingDemandPage() {
                               <span className="font-semibold text-slate-600">
                                 {grp.programs.length} chương trình
                               </span>
+                              {grp.totalCompleted > 0 && (
+                                <span className="font-bold text-blue-900 bg-blue-100 border border-blue-200 px-2.5 py-0.5 rounded-lg">
+                                  Đã học {grp.totalCompleted.toLocaleString('vi-VN')}
+                                </span>
+                              )}
                               <span className="font-bold text-emerald-900 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-lg">
-                                Tổng {grp.totalParticipants.toLocaleString('vi-VN')} người
+                                ĐK 2027: {grp.totalParticipants.toLocaleString('vi-VN')} người
                               </span>
                             </div>
                           </div>
@@ -1827,11 +1840,16 @@ export default function AdminTrainingDemandPage() {
                                           </span>
                                           {hasRegistered ? (
                                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                              Đã đăng ký {prog.sum_participants} người
+                                              ĐK {prog.sum_participants.toLocaleString('vi-VN')} người
                                             </span>
                                           ) : (
                                             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                                               Chưa nhập số lượng
+                                            </span>
+                                          )}
+                                          {(prog.sum_completed || 0) > 0 && (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300">
+                                              Đã học {(prog.sum_completed || 0).toLocaleString('vi-VN')}
                                             </span>
                                           )}
                                         </div>
@@ -1854,64 +1872,135 @@ export default function AdminTrainingDemandPage() {
                                         <div className="text-xs text-slate-500">
                                           {prog.registered_topic_count} / {prog.total_available_topics} chuyên đề
                                         </div>
+                                        {(prog.sum_completed || 0) > 0 && (
+                                          <div className="text-[11px] font-semibold text-blue-700">
+                                            Đã học: {(prog.sum_completed || 0).toLocaleString('vi-VN')}
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
 
-                                  {/* Accordion Body: Bảng chi tiết các chuyên đề */}
+                                  {/* Accordion Body: Bảng chi tiết các chuyên đề với đầy đủ 13 cột chuẩn */}
                                   {isExpanded && (
                                     <div className="border-t border-slate-200 p-0 overflow-x-auto">
-                                      <table className="w-full text-left text-xs">
-                                        <thead className="bg-[#F8F9FA] text-slate-600 font-bold uppercase text-[11px] border-b border-slate-200">
+                                      <table className="w-full text-left text-xs border-collapse">
+                                        <thead className="bg-[#F8F9FA] text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200 tracking-wider">
                                           <tr>
-                                            <th className="px-4 py-3 w-12 text-center">STT</th>
-                                            <th className="px-4 py-3 w-72">Tên chuyên đề</th>
-                                            <th className="px-4 py-3 min-w-[260px]">Đối tượng tham gia</th>
-                                            <th className="px-4 py-3 w-28 text-center">Thời lượng</th>
-                                            <th className="px-4 py-3 w-36 text-center">Hình thức</th>
-                                            <th className="px-5 py-3 w-40 text-right">Số lượng đăng ký</th>
+                                            <th className="px-2 py-2.5 w-10 text-center whitespace-normal leading-tight">
+                                              STT
+                                            </th>
+                                            <th className="px-1.5 py-2.5 w-16 max-w-[68px] text-center whitespace-normal leading-tight">
+                                              Vị trí<br />chức danh
+                                            </th>
+                                            <th className="px-3 py-2.5 min-w-[200px] whitespace-normal leading-tight">
+                                              Tên chuyên đề
+                                            </th>
+                                            <th className="px-1.5 py-2.5 w-20 max-w-[80px] text-center whitespace-normal leading-tight">
+                                              Hình thức<br />đào tạo
+                                            </th>
+                                            <th className="px-1.5 py-2.5 w-16 max-w-[68px] text-center whitespace-normal leading-tight">
+                                              Thời<br />lượng
+                                            </th>
+                                            <th className="px-1.5 py-2.5 w-20 max-w-[80px] text-center whitespace-normal leading-tight">
+                                              Lộ trình<br />đào tạo
+                                            </th>
+                                            <th className="px-1 py-2.5 w-14 max-w-[60px] text-center whitespace-normal leading-tight">
+                                              Năng<br />lực
+                                            </th>
+                                            <th className="px-2.5 py-2.5 min-w-[160px] whitespace-normal leading-tight">
+                                              Chứng chỉ /<br />Chuẩn đào tạo
+                                            </th>
+                                            <th className="px-1.5 py-2.5 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                                              Quy hoạch<br />VT cao hơn
+                                            </th>
+                                            <th className="px-1.5 py-2.5 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                                              Bổ nhiệm<br />VT cao hơn
+                                            </th>
+                                            <th className="px-1.5 py-2.5 w-14 max-w-[58px] text-center whitespace-normal leading-tight text-[9px]">
+                                              Bổ nhiệm<br />lại
+                                            </th>
+                                            <th className="px-3 py-2.5 w-24 text-right bg-blue-50/70 text-blue-900 font-extrabold border-l border-blue-100 whitespace-normal leading-tight">
+                                              Đã học
+                                            </th>
+                                            <th className="px-3 py-2.5 w-28 text-right bg-emerald-50/70 text-emerald-900 font-extrabold border-l border-emerald-100 whitespace-normal leading-tight">
+                                              Đăng ký học<br />năm 2027
+                                            </th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                           {prog.topics && prog.topics.length > 0 ? (
-                                            prog.topics.map((t: any, idx: number) => (
-                                              <tr
-                                                key={t.demand_topic_id || idx}
-                                                className={`hover:bg-slate-50 transition-colors ${
-                                                  t.participant_count > 0 ? 'bg-emerald-50/20' : ''
-                                                }`}
-                                              >
-                                                <td className="px-4 py-3 text-center text-slate-400 font-medium">
-                                                  {idx + 1}
-                                                </td>
-                                                <td className="px-4 py-3 font-semibold text-slate-900">
-                                                  {t.topic_name}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600 whitespace-pre-line leading-relaxed">
-                                                  {t.target_audience || '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-700 font-medium text-center">
-                                                  {t.duration || '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600 text-center">
-                                                  {t.delivery_method || '—'}
-                                                </td>
-                                                <td className="px-5 py-3 text-right">
-                                                  <span
-                                                    className={`inline-block font-extrabold px-3 py-1 rounded-lg text-xs ${
-                                                      t.participant_count > 0
-                                                        ? 'bg-emerald-100 text-emerald-900 font-bold border border-emerald-200'
-                                                        : 'text-slate-400 bg-slate-100'
-                                                    }`}
-                                                  >
-                                                    {t.participant_count} người
-                                                  </span>
-                                                </td>
-                                              </tr>
-                                            ))
+                                            prog.topics.map((t: any, idx: number) => {
+                                              const hasRegistered = (t.participant_count || 0) > 0;
+                                              const hasCompleted = (t.completed_count || 0) > 0;
+                                              return (
+                                                <tr
+                                                  key={t.demand_topic_id || idx}
+                                                  className={`hover:bg-slate-50 transition-colors ${
+                                                    hasRegistered ? 'bg-emerald-50/20' : ''
+                                                  }`}
+                                                >
+                                                  <td className="px-2 py-2 text-center text-slate-400 font-medium">
+                                                    {idx + 1}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-center font-mono font-bold text-slate-700 bg-slate-50/50">
+                                                    {t.position_code || '—'}
+                                                  </td>
+                                                  <td className="px-3 py-2 font-semibold text-slate-900 whitespace-normal leading-snug">
+                                                    {t.topic_name}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-slate-600 text-center text-xs">
+                                                    {t.delivery_method || '—'}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-slate-700 font-medium text-center text-xs">
+                                                    {t.duration || '—'}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-slate-600 text-center whitespace-normal leading-tight text-xs">
+                                                    {t.learning_path || '—'}
+                                                  </td>
+                                                  <td className="px-2 py-2 text-center font-medium text-slate-600 text-xs">
+                                                    {t.competency || '—'}
+                                                  </td>
+                                                  <td className="px-2.5 py-2 text-slate-600 whitespace-normal leading-snug text-[11px]">
+                                                    {t.certificate_requirement || t.target_audience || '—'}
+                                                  </td>
+                                                  <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
+                                                    {t.cert_planning_higher || '—'}
+                                                  </td>
+                                                  <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
+                                                    {t.cert_appoint_higher || '—'}
+                                                  </td>
+                                                  <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
+                                                    {t.cert_reappoint || '—'}
+                                                  </td>
+                                                  <td className="px-2.5 py-2 text-right bg-blue-50/30 border-l border-blue-100">
+                                                    <span
+                                                      className={`inline-block font-bold px-2.5 py-1 rounded-lg text-xs ${
+                                                        hasCompleted
+                                                          ? 'bg-blue-100 text-blue-900 border border-blue-200'
+                                                          : 'text-slate-400 bg-slate-100'
+                                                      }`}
+                                                    >
+                                                      {(t.completed_count || 0).toLocaleString('vi-VN')} người
+                                                    </span>
+                                                  </td>
+                                                  <td className="px-3 py-2 text-right bg-emerald-50/30 border-l border-emerald-100">
+                                                    <span
+                                                      className={`inline-block font-extrabold px-2.5 py-1 rounded-lg text-xs ${
+                                                        hasRegistered
+                                                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                                          : 'text-slate-400 bg-slate-100'
+                                                      }`}
+                                                    >
+                                                      {(t.participant_count || 0).toLocaleString('vi-VN')} người
+                                                    </span>
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })
                                           ) : (
                                             <tr>
-                                              <td colSpan={6} className="p-4 text-center text-slate-400">
+                                              <td colSpan={13} className="p-4 text-center text-slate-400">
                                                 Không có chuyên đề nào trong chương trình này.
                                               </td>
                                             </tr>
