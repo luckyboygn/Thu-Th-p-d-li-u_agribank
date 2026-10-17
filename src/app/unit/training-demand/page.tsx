@@ -1197,22 +1197,42 @@ function UnitTrainingDemandContent() {
                               <table className="w-full text-left text-xs whitespace-nowrap">
                                 <thead className="bg-[#F8F9FA] text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                                   <tr>
-                                    <th className="px-3 py-3 w-10 text-center">STT</th>
-                                    <th className="px-3 py-3 w-20 text-center">Vị trí chức danh</th>
-                                    <th className="px-4 py-3 min-w-[240px] whitespace-normal">Tên chuyên đề</th>
-                                    <th className="px-3 py-3 w-28 text-center">Hình thức đào tạo</th>
-                                    <th className="px-3 py-3 w-24 text-center">Thời lượng</th>
-                                    <th className="px-3 py-3 w-32 text-center whitespace-normal">Lộ trình đào tạo</th>
-                                    <th className="px-3 py-3 w-20 text-center">Năng lực</th>
-                                    <th className="px-4 py-3 min-w-[200px] whitespace-normal">Chứng chỉ/chuẩn đào tạo</th>
-                                    <th className="px-3 py-3 w-20 text-center">Quy hoạch VT cao hơn</th>
-                                    <th className="px-3 py-3 w-20 text-center">Bổ nhiệm VT cao hơn</th>
-                                    <th className="px-3 py-3 w-20 text-center">Bổ nhiệm lại</th>
-                                    <th className="px-4 py-3 w-28 text-right bg-blue-50/70 text-blue-900 font-extrabold border-l border-blue-100">
+                                    <th className="px-2 py-2.5 w-10 text-center">STT</th>
+                                    <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
+                                      Vị trí<br />chức danh
+                                    </th>
+                                    <th className="px-3 py-2 min-w-[200px] whitespace-normal leading-tight">
+                                      Tên chuyên đề
+                                    </th>
+                                    <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
+                                      Hình thức<br />đào tạo
+                                    </th>
+                                    <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
+                                      Thời<br />lượng
+                                    </th>
+                                    <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
+                                      Lộ trình<br />đào tạo
+                                    </th>
+                                    <th className="px-2 py-2 w-14 text-center whitespace-normal leading-tight">
+                                      Năng<br />lực
+                                    </th>
+                                    <th className="px-3 py-2 min-w-[160px] whitespace-normal leading-tight">
+                                      Chứng chỉ /<br />Chuẩn đào tạo
+                                    </th>
+                                    <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                                      Quy hoạch<br />VT cao hơn
+                                    </th>
+                                    <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                                      Bổ nhiệm<br />VT cao hơn
+                                    </th>
+                                    <th className="px-1.5 py-2 w-14 max-w-[58px] text-center whitespace-normal leading-tight text-[9px]">
+                                      Bổ nhiệm<br />lại
+                                    </th>
+                                    <th className="px-3 py-2 w-24 text-right bg-blue-50/70 text-blue-900 font-extrabold border-l border-blue-100 whitespace-normal leading-tight">
                                       Đã học
                                     </th>
-                                    <th className="px-4 py-3 w-36 text-right bg-emerald-50/70 text-emerald-900 font-extrabold border-l border-emerald-100">
-                                      Đăng ký học năm 2027
+                                    <th className="px-3 py-2 w-28 text-right bg-emerald-50/70 text-emerald-900 font-extrabold border-l border-emerald-100 whitespace-normal leading-tight">
+                                      Đăng ký học<br />năm 2027
                                     </th>
                                   </tr>
                                 </thead>
@@ -1224,40 +1244,40 @@ function UnitTrainingDemandContent() {
                                         t.participant_count > 0 ? 'bg-emerald-50/20' : ''
                                       }`}
                                     >
-                                      <td className="px-3 py-2.5 text-center text-slate-400 font-medium">
+                                      <td className="px-2 py-2 text-center text-slate-400 font-medium">
                                         {idx + 1}
                                       </td>
-                                      <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-700 bg-slate-50/50">
+                                      <td className="px-2 py-2 text-center font-mono font-bold text-slate-700 bg-slate-50/50">
                                         {t.position_code || '—'}
                                       </td>
-                                      <td className="px-4 py-2.5 font-semibold text-slate-900 whitespace-normal">
+                                      <td className="px-3 py-2 font-semibold text-slate-900 whitespace-normal leading-snug">
                                         {t.topic_name}
                                       </td>
-                                      <td className="px-3 py-2.5 text-slate-600 text-center">
+                                      <td className="px-2 py-2 text-slate-600 text-center text-xs">
                                         {t.delivery_method || '—'}
                                       </td>
-                                      <td className="px-3 py-2.5 text-slate-700 font-medium text-center">
+                                      <td className="px-2 py-2 text-slate-700 font-medium text-center text-xs">
                                         {t.duration || '—'}
                                       </td>
-                                      <td className="px-3 py-2.5 text-slate-600 text-center whitespace-normal">
+                                      <td className="px-2 py-2 text-slate-600 text-center whitespace-normal leading-tight text-xs">
                                         {t.learning_path || '—'}
                                       </td>
-                                      <td className="px-3 py-2.5 text-center font-medium text-slate-600">
+                                      <td className="px-2 py-2 text-center font-medium text-slate-600 text-xs">
                                         {t.competency || '—'}
                                       </td>
-                                      <td className="px-4 py-2.5 text-slate-600 whitespace-normal leading-relaxed text-[11px]">
+                                      <td className="px-3 py-2 text-slate-600 whitespace-normal leading-snug text-[11px]">
                                         {t.certificate_requirement || t.target_audience || '—'}
                                       </td>
-                                      <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                      <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
                                         {t.cert_planning_higher || '—'}
                                       </td>
-                                      <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                      <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
                                         {t.cert_appoint_higher || '—'}
                                       </td>
-                                      <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                      <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
                                         {t.cert_reappoint || '—'}
                                       </td>
-                                      <td className="px-4 py-2.5 text-right bg-blue-50/30 border-l border-blue-100">
+                                      <td className="px-2.5 py-2 text-right bg-blue-50/30 border-l border-blue-100">
                                         <span
                                           className={`inline-block font-bold px-2.5 py-1 rounded-lg text-xs ${
                                             (t.completed_count || 0) > 0
@@ -1903,26 +1923,46 @@ function UnitTrainingDemandContent() {
                       <table className="w-full text-left text-xs whitespace-nowrap">
                         <thead className="bg-slate-100 text-slate-700 uppercase font-bold sticky top-0 border-b border-slate-200 z-10 text-[10px] tracking-wider">
                           <tr>
-                            <th className="px-3 py-3 w-10 text-center">STT</th>
-                            <th className="px-3 py-3 w-20 text-center">Vị trí chức danh</th>
-                            <th className="px-4 py-3 min-w-[240px] whitespace-normal">Tên chuyên đề</th>
-                            <th className="px-3 py-3 w-28 text-center">Hình thức đào tạo</th>
-                            <th className="px-3 py-3 w-24 text-center">Thời lượng</th>
-                            <th className="px-3 py-3 w-32 text-center whitespace-normal">Lộ trình đào tạo</th>
-                            <th className="px-3 py-3 w-20 text-center">Năng lực</th>
-                            <th className="px-4 py-3 min-w-[200px] whitespace-normal">Chứng chỉ/chuẩn đào tạo</th>
-                            <th className="px-3 py-3 w-20 text-center">Quy hoạch VT cao hơn</th>
-                            <th className="px-3 py-3 w-20 text-center">Bổ nhiệm VT cao hơn</th>
-                            <th className="px-3 py-3 w-20 text-center">Bổ nhiệm lại</th>
-                            <th className="px-3 py-3 w-28 text-right bg-blue-100/80 text-blue-900 border-l border-blue-200">
+                            <th className="px-2 py-2.5 w-10 text-center">STT</th>
+                            <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
+                              Vị trí<br />chức danh
+                            </th>
+                            <th className="px-3 py-2 min-w-[200px] whitespace-normal leading-tight">
+                              Tên chuyên đề
+                            </th>
+                            <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
+                              Hình thức<br />đào tạo
+                            </th>
+                            <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
+                              Thời<br />lượng
+                            </th>
+                            <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
+                              Lộ trình<br />đào tạo
+                            </th>
+                            <th className="px-2 py-2 w-14 text-center whitespace-normal leading-tight">
+                              Năng<br />lực
+                            </th>
+                            <th className="px-3 py-2 min-w-[160px] whitespace-normal leading-tight">
+                              Chứng chỉ /<br />Chuẩn đào tạo
+                            </th>
+                            <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                              Quy hoạch<br />VT cao hơn
+                            </th>
+                            <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                              Bổ nhiệm<br />VT cao hơn
+                            </th>
+                            <th className="px-1.5 py-2 w-14 max-w-[58px] text-center whitespace-normal leading-tight text-[9px]">
+                              Bổ nhiệm<br />lại
+                            </th>
+                            <th className="px-2 py-2 w-24 text-right bg-blue-100/80 text-blue-900 border-l border-blue-200 whitespace-normal leading-tight">
                               <div className="flex flex-col items-end">
                                 <span>Đã học (*)</span>
                                 <span className="text-[9px] font-normal text-blue-700 lowercase">tự nhập SL</span>
                               </div>
                             </th>
-                            <th className="px-3 py-3 w-36 text-right bg-emerald-100/80 text-emerald-900 border-l border-emerald-200">
+                            <th className="px-2 py-2 w-28 text-right bg-emerald-100/80 text-emerald-900 border-l border-emerald-200 whitespace-normal leading-tight">
                               <div className="flex flex-col items-end">
-                                <span>Đăng ký học năm 2027 (*)</span>
+                                <span>Đăng ký học<br />năm 2027 (*)</span>
                                 <span className="text-[9px] font-normal text-emerald-700 lowercase">tự nhập SL</span>
                               </div>
                             </th>
@@ -1939,42 +1979,42 @@ function UnitTrainingDemandContent() {
                                   hasErr || hasCompErr ? 'bg-rose-50/50' : t.participant_count > 0 ? 'bg-emerald-50/20' : ''
                                 }`}
                               >
-                                <td className="px-3 py-2.5 text-center text-slate-400 font-medium">
+                                <td className="px-2 py-2 text-center text-slate-400 font-medium">
                                   {idx + 1}
                                 </td>
-                                <td className="px-3 py-2.5 text-center font-mono font-bold text-slate-700 bg-slate-50/60">
+                                <td className="px-2 py-2 text-center font-mono font-bold text-slate-700 bg-slate-50/60 text-xs">
                                   {t.position_code || '—'}
                                 </td>
-                                <td className="px-4 py-2.5 font-semibold text-slate-900 whitespace-normal">
+                                <td className="px-3 py-2 font-semibold text-slate-900 whitespace-normal leading-snug text-xs">
                                   {t.topic_name}
                                 </td>
-                                <td className="px-3 py-2.5 text-slate-600 text-center">
+                                <td className="px-2 py-2 text-slate-600 text-center text-xs">
                                   {t.delivery_method || '—'}
                                 </td>
-                                <td className="px-3 py-2.5 text-slate-700 font-medium text-center">
+                                <td className="px-2 py-2 text-slate-700 font-medium text-center text-xs">
                                   {t.duration || '—'}
                                 </td>
-                                <td className="px-3 py-2.5 text-slate-600 text-center whitespace-normal">
+                                <td className="px-2 py-2 text-slate-600 text-center whitespace-normal leading-tight text-xs">
                                   {t.learning_path || '—'}
                                 </td>
-                                <td className="px-3 py-2.5 text-center font-medium text-slate-600">
+                                <td className="px-2 py-2 text-center font-medium text-slate-600 text-xs">
                                   {t.competency || '—'}
                                 </td>
-                                <td className="px-4 py-2.5 text-slate-600 whitespace-normal leading-relaxed text-[11px]">
+                                <td className="px-3 py-2 text-slate-600 whitespace-normal leading-snug text-[11px]">
                                   {t.certificate_requirement || t.target_audience || '—'}
                                 </td>
-                                <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
                                   {t.cert_planning_higher || '—'}
                                 </td>
-                                <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
                                   {t.cert_appoint_higher || '—'}
                                 </td>
-                                <td className="px-3 py-2.5 text-center font-bold text-slate-700">
+                                <td className="px-1.5 py-2 text-center font-bold text-slate-700 text-xs">
                                   {t.cert_reappoint || '—'}
                                 </td>
 
                                 {/* Ô NHẬP 1: ĐÃ HỌC */}
-                                <td className="px-3 py-2.5 text-right bg-blue-50/40 border-l border-blue-100">
+                                <td className="px-2 py-2 text-right bg-blue-50/40 border-l border-blue-100">
                                   <div className="flex flex-col items-end">
                                     <input
                                       type="number"
