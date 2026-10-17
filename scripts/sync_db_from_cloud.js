@@ -80,6 +80,83 @@ async function syncDbFromCloud() {
       }
       fs.renameSync(tempPath, localDbPath);
       console.log(`[Cloud Sync] ✅ Đã khôi phục thành công '${remoteKey}' từ Cloud vào: ${localDbPath}`);
+
+      // Kiểm tra và tự động vá catalog 818 chuyên đề nếu DB tải về từ Cloud bị thiếu metadata
+      try {
+        const { DatabaseSync } = require('node:sqlite');
+        const db = new DatabaseSync(localDbPath);
+        // Chạy migration schema
+        const cols = db.prepare('PRAGMA table_info(training_program_topics)').all();
+        const colNames = cols.map(c => c.name);
+        const newCols = {
+          position_code: 'TEXT',
+          learning_path: 'TEXT',
+          competency: 'TEXT',
+          certificate_requirement: 'TEXT',
+          cert_planning_higher: 'TEXT',
+          cert_appoint_higher: 'TEXT',
+          cert_reappoint: 'TEXT'
+        };
+        for (const [col, type] of Object.entries(newCols)) {
+          if (!colNames.includes(col)) {
+            db.exec(`ALTER TABLE training_program_topics ADD COLUMN ${col} ${type};`);
+          }
+        }
+        
+        // Kiểm tra xem đã đủ metadata chưa
+        const check = db.prepare("SELECT count(*) as cnt FROM training_program_topics WHERE position_code IS NOT NULL AND position_code != '' AND learning_path IS NOT NULL AND learning_path != ''").get();
+        if (!check || check.cnt < 700) {
+          console.log('[Cloud Sync] DB từ Cloud thiếu metadata chuyên đề. Đang tự động nạp từ master-topics-data.json...');
+          const masterJsonPath = path.resolve(__dirname, '../src/lib/master-topics-data.json');
+          if (fs.existsSync(masterJsonPath)) {
+            const masterTopics = JSON.parse(fs.readFileSync(masterJsonPath, 'utf8'));
+            const dbTopics = db.prepare("SELECT t.id, t.topic_name, p.code as prog_code FROM training_program_topics t JOIN training_programs p ON t.program_id = p.id").all();
+            const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+            const tMap = new Map();
+            for (const t of dbTopics) {
+              const k = `${norm(t.prog_code)}||${norm(t.topic_name)}`;
+              if (!tMap.has(k)) tMap.set(k, []);
+              tMap.get(k).push(t);
+              const fallbackKey = norm(t.topic_name);
+              if (!tMap.has(fallbackKey)) tMap.set(fallbackKey, []);
+              tMap.get(fallbackKey).push(t);
+            }
+            const updateStmt = db.prepare(`
+              UPDATE training_program_topics
+              SET position_code = ?, delivery_method = ?, duration = ?, learning_path = ?, competency = ?, certificate_requirement = ?, cert_planning_higher = ?, cert_appoint_higher = ?, cert_reappoint = ?
+              WHERE id = ?
+            `);
+            let countUpdated = 0;
+            for (const mt of masterTopics) {
+              const k = `pl_${norm(mt.progCode)}||${norm(mt.topicName)}`;
+              const list = tMap.get(k) || tMap.get(norm(mt.topicName));
+              if (list && list.length > 0) {
+                const target = list.find(x => x.prog_code.includes(mt.progCode)) || list[0];
+                updateStmt.run(mt.positionCode||'', mt.deliveryMethod||'', mt.duration||'', mt.learningPath||'', mt.competency||'', mt.certificateRequirement||'', mt.certPlanningHigher||'', mt.certAppointHigher||'', mt.certReappoint||'', target.id);
+                countUpdated++;
+              }
+            }
+            console.log(`[Cloud Sync] ✅ Đã cập nhật ${countUpdated}/${masterTopics.length} chuyên đề chuẩn.`);
+            db.close();
+
+            // Đẩy lại file SQLite đã hoàn thiện lên Cloud Storage!
+            console.log(`[Cloud Sync] Đang đồng bộ bản hoàn thiện lên Cloud Storage...`);
+            const fileStream = fs.createReadStream(localDbPath);
+            await s3.send(new PutObjectCommand({
+              Bucket: bucketName,
+              Key: remoteKey,
+              Body: fileStream,
+            }));
+            console.log(`[Cloud Sync] ✅ Đã đồng bộ bản hoàn thiện lên Cloud Storage thành công!`);
+          } else {
+            db.close();
+          }
+        } else {
+          db.close();
+        }
+      } catch (err) {
+        console.warn('[Cloud Sync] Lỗi cập nhật master catalog:', err.message);
+      }
     } else {
       console.log(`[Cloud Sync] Chưa có file trên Cloud. Đang tải bản database.sqlite hiện tại lên Cloud làm bản gốc...`);
       if (fs.existsSync(localDbPath)) {

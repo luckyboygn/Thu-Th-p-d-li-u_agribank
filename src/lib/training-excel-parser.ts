@@ -45,12 +45,35 @@ export interface ParseExcelResult {
 
 export function parseTrainingDemandExcel(
   workbook: xlsx.WorkBook,
-  allOfficialPrograms: any[],
-  allOfficialTopics: any[]
+  allOfficialPrograms?: any[],
+  allOfficialTopics?: any[]
 ): ParseExcelResult {
+  if (!allOfficialPrograms || !allOfficialTopics) {
+    try {
+      const { getDatabase } = require('./db');
+      const db = getDatabase();
+      if (!allOfficialPrograms) {
+        allOfficialPrograms = db.prepare('SELECT id, code, name, category_type FROM training_programs').all() as any[];
+      }
+      if (!allOfficialTopics) {
+        allOfficialTopics = db.prepare(`
+          SELECT t.id, t.program_id, t.topic_name, t.position_code, t.delivery_method, t.duration,
+                 t.learning_path, t.competency, t.certificate_requirement,
+                 t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint,
+                 p.code as program_code, p.name as program_name
+          FROM training_program_topics t
+          JOIN training_programs p ON t.program_id = p.id
+        `).all() as any[];
+      }
+    } catch (e: any) {
+      if (!allOfficialPrograms) allOfficialPrograms = [];
+      if (!allOfficialTopics) allOfficialTopics = [];
+    }
+  }
+
   // Bản đồ tra cứu theo tên chuẩn hóa
   const topicMapByName = new Map<string, any[]>();
-  for (const t of allOfficialTopics) {
+  for (const t of allOfficialTopics!) {
     const nName = normalizeText(t.topic_name);
     if (!topicMapByName.has(nName)) topicMapByName.set(nName, []);
     topicMapByName.get(nName)!.push(t);
@@ -58,7 +81,7 @@ export function parseTrainingDemandExcel(
 
   const programMapByCode = new Map<string, any>();
   const programMapByName = new Map<string, any>();
-  for (const p of allOfficialPrograms) {
+  for (const p of allOfficialPrograms!) {
     programMapByCode.set(p.code.toUpperCase().trim(), p);
     programMapByName.set(normalizeText(p.name), p);
   }
@@ -83,6 +106,22 @@ export function parseTrainingDemandExcel(
       normSheet.includes('instruction')
     ) {
       continue;
+    }
+
+    // Tự động giải phóng các ô gộp (merged cells) để dữ liệu không bị khuyết thiếu trên từng dòng
+    if (ws['!merges']) {
+      for (const m of ws['!merges']) {
+        const originCell = ws[xlsx.utils.encode_cell(m.s)];
+        if (!originCell || originCell.v === undefined || originCell.v === null || originCell.v === '') continue;
+        for (let r = m.s.r; r <= m.e.r; r++) {
+          for (let c = m.s.c; c <= m.e.c; c++) {
+            const addr = xlsx.utils.encode_cell({ r, c });
+            if (!ws[addr] || ws[addr].v === undefined || ws[addr].v === null || ws[addr].v === '') {
+              ws[addr] = { ...originCell };
+            }
+          }
+        }
+      }
     }
 
     const isProposalSheet = normSheet.includes('de xuat') || normSheet.includes('ngoai khung') || normSheet.includes('proposal');
@@ -151,40 +190,7 @@ export function parseTrainingDemandExcel(
         const rowStr = row.map(c => String(c || '').trim()).filter(Boolean).join(' ');
         if (!rowStr) continue;
 
-        // 1. Kiểm tra dòng Tiêu đề Khung chương trình / Phụ lục
-        const firstCells = row.slice(0, 3).map(c => String(c || '').trim()).join(' ');
-        const upperFirst = firstCells.toUpperCase();
-        if (
-          upperFirst.includes('PHỤ LỤC') ||
-          upperFirst.includes('PHU LUC') ||
-          upperFirst.includes('KHUNG CHƯƠNG TRÌNH') ||
-          upperFirst.includes('KHUNG CHUONG TRINH')
-        ) {
-          // Ưu tiên khớp chính xác mã Phụ lục: PHỤ LỤC I.1, PHỤ LỤC III.1, etc.
-          const plMatch = firstCells.match(/PHỤ LỤC\s+([IVXLCDM]+)\.(\d+)/i) || firstCells.match(/PHU LUC\s+([IVXLCDM]+)\.(\d+)/i);
-          let matchedProg: any = null;
-          if (plMatch) {
-            const plCode = `PL_${plMatch[1]}.${plMatch[2]}`;
-            matchedProg = allOfficialPrograms.find(p => p.code === plCode || normalizeText(p.code) === normalizeText(plCode));
-          }
-
-          if (!matchedProg) {
-            const normFirst = normalizeText(firstCells);
-            matchedProg = allOfficialPrograms.find(p => {
-              const normPCode = normalizeText(p.code);
-              const normPName = normalizeText(p.name);
-              return normFirst.includes(normPCode) || normFirst.includes(normPName) || (normPCode && normFirst.includes(normPCode.replace(/[^a-z0-9]/g, '')));
-            });
-          }
-
-          if (matchedProg) {
-            currentProgramId = matchedProg.id;
-            colMap = null; // Reset header mapping cho block mới
-            continue;
-          }
-        }
-
-        // 2. Kiểm tra dòng Header của block (chứa 'Tên chuyên đề' hoặc 'Chuyên đề đào tạo')
+        // 1. Kiểm tra dòng Header của bảng (chứa 'Tên chuyên đề' hoặc 'Chuyên đề đào tạo')
         const isHeaderRow = row.some(cell => {
           const nCell = normalizeText(String(cell));
           return (nCell.includes('ten chuyen de') || nCell.includes('chuyen de dao tao')) && !nCell.includes('hoan thanh');
@@ -224,6 +230,47 @@ export function parseTrainingDemandExcel(
             });
           }
           continue;
+        }
+
+        // 2. Kiểm tra dòng Tiêu đề Khung chương trình / Phụ lục (Chỉ áp dụng khi không phải dòng dữ liệu có STT dạng số)
+        const cell0 = String(row[0] || '').trim();
+        const cell1 = String(row[1] || '').trim();
+        const isNumericStt = !isNaN(Number(cell0)) && Number(cell0) > 0;
+
+        if (!isNumericStt) {
+          const firstCells = row.slice(0, 3).map(c => String(c || '').trim()).join(' ');
+          const upperFirst = firstCells.toUpperCase();
+          if (
+            upperFirst.startsWith('PHỤ LỤC') ||
+            upperFirst.startsWith('PHU LUC') ||
+            upperFirst.startsWith('KHUNG CHƯƠNG TRÌNH') ||
+            upperFirst.startsWith('KHUNG CHUONG TRINH') ||
+            cell0.toUpperCase().startsWith('PHỤ LỤC') ||
+            cell1.toUpperCase().startsWith('PHỤ LỤC')
+          ) {
+            // Ưu tiên khớp chính xác mã Phụ lục: PHỤ LỤC I.1, PHỤ LỤC III.1, etc.
+            const plMatch = firstCells.match(/PHỤ LỤC\s+([IVXLCDM]+)\.(\d+)/i) || firstCells.match(/PHU LUC\s+([IVXLCDM]+)\.(\d+)/i);
+            let matchedProg: any = null;
+            if (plMatch) {
+              const plCode = `PL_${plMatch[1]}.${plMatch[2]}`;
+              matchedProg = allOfficialPrograms!.find(p => p.code === plCode || normalizeText(p.code) === normalizeText(plCode));
+            }
+
+            if (!matchedProg) {
+              const normFirst = normalizeText(firstCells);
+              matchedProg = allOfficialPrograms!.find(p => {
+                const normPCode = normalizeText(p.code);
+                const normPName = normalizeText(p.name);
+                return normFirst.includes(normPCode) || normFirst.includes(normPName) || (normPCode && normFirst.includes(normPCode.replace(/[^a-z0-9]/g, '')));
+              });
+            }
+
+            if (matchedProg) {
+              currentProgramId = matchedProg.id;
+              colMap = null; // Reset header mapping cho block mới
+              continue;
+            }
+          }
         }
 
         // 3. Xử lý dòng dữ liệu chuyên đề

@@ -73,6 +73,14 @@ export function getDatabase(): DatabaseSync {
 
     // Tự động migration schema khi cần
     runSchemaMigrations(dbInstance);
+
+    // Tự động kiểm tra và đồng bộ chi tiết 818 chuyên đề chuẩn Agribank nếu dữ liệu bị thiếu
+    try {
+      const { ensureMasterCatalogSynced } = require('./catalog-master-sync');
+      ensureMasterCatalogSynced(dbInstance);
+    } catch (e: any) {
+      console.warn('[DB Init] Không thể tự động kiểm tra catalog sync:', e.message);
+    }
   }
   return dbInstance;
 }

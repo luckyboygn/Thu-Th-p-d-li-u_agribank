@@ -32,43 +32,55 @@ export async function GET(req: NextRequest) {
   if (action === 'TEMPLATE') {
     const db = getDatabase();
 
-    // Lấy toàn bộ danh mục Khung chương trình và chuyên đề chính thức
+    // Lấy toàn bộ danh mục Khung chương trình và chuyên đề chính thức với đầy đủ thông tin mô tả
     const topics = db.prepare(`
       SELECT p.code as program_code, p.name as program_name,
-             t.topic_name, t.delivery_method, t.duration
+             t.position_code, t.topic_name, t.delivery_method, t.duration,
+             t.learning_path, t.competency, t.certificate_requirement,
+             t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint
       FROM training_program_topics t
       JOIN training_programs p ON t.program_id = p.id
-      ORDER BY p.id ASC, t.display_order ASC
+      ORDER BY p.id ASC, t.display_order ASC, t.id ASC
     `).all() as any[];
 
     const wb = xlsx.utils.book_new();
 
-    // Sheet 1: Nhu cầu đào tạo theo khung
+    // Sheet 1: Nhu cầu đào tạo theo khung chuẩn Agribank (13 cột mô tả + 2 cột nhập liệu)
     const dataSheet1 = topics.map((t, idx) => ({
       'STT': idx + 1,
       'Mã Khung CT': t.program_code,
       'Khung Chương Trình Đào Tạo': t.program_name,
+      'Vị Trí Chức Danh': t.position_code || '',
       'Tên Chuyên Đề Đào Tạo': t.topic_name,
-      'Hình Thức Đào Tạo': t.delivery_method || 'Trực tiếp / Trực tuyến',
-      'Thời Lượng': t.duration || '1 ngày',
-      'Đã Học (Số lượng)': '',
-      'Đăng Ký Học Năm 2027 (Số lượng)': '',
-      'Đăng Ký Học Năm 2027 (Họ tên)': '',
-      'Ghi Chú': ''
+      'Hình Thức Đào Tạo': t.delivery_method || 'Trực tuyến',
+      'Thời Lượng Đào Tạo': t.duration || '1 giờ',
+      'Lộ Trình Đào Tạo': t.learning_path || '',
+      'Năng Lực': t.competency || '',
+      'Chứng Chỉ/Chứng Nhận Đào Tạo': t.certificate_requirement || '',
+      'Chứng Chỉ Khi Quy Hoạch Ở Vị Trí Cao Hơn': t.cert_planning_higher || '',
+      'Chứng Chỉ Khi Bổ Nhiệm Ở Vị Trí Cao Hơn': t.cert_appoint_higher || '',
+      'Chứng Chỉ Khi Bổ Nhiệm Lại': t.cert_reappoint || '',
+      'Đã học (số lượng)': '',
+      'Đăng ký học năm 2027 (số lượng)': ''
     }));
 
     const ws1 = xlsx.utils.json_to_sheet(dataSheet1);
     ws1['!cols'] = [
-      { wch: 6 },
-      { wch: 15 },
-      { wch: 45 },
-      { wch: 55 },
-      { wch: 22 },
-      { wch: 15 },
-      { wch: 20 },
-      { wch: 28 },
-      { wch: 35 },
-      { wch: 30 }
+      { wch: 6 },  // STT
+      { wch: 15 }, // Mã Khung CT
+      { wch: 45 }, // Khung Chương Trình Đào Tạo
+      { wch: 22 }, // Vị Trí Chức Danh
+      { wch: 55 }, // Tên Chuyên Đề Đào Tạo
+      { wch: 20 }, // Hình Thức Đào Tạo
+      { wch: 18 }, // Thời Lượng Đào Tạo
+      { wch: 20 }, // Lộ Trình Đào Tạo
+      { wch: 15 }, // Năng Lực
+      { wch: 40 }, // Chứng Chỉ/Chứng Nhận Đào Tạo
+      { wch: 18 }, // Chứng Chỉ Quy Hoạch
+      { wch: 18 }, // Chứng Chỉ Bổ Nhiệm
+      { wch: 18 }, // Chứng Chỉ Bổ Nhiệm Lại
+      { wch: 22 }, // Đã học (số lượng)
+      { wch: 30 }  // Đăng ký học năm 2027 (số lượng)
     ];
     xlsx.utils.book_append_sheet(wb, ws1, 'Nhu_Cau_Dao_Tao');
 
@@ -97,7 +109,7 @@ export async function GET(req: NextRequest) {
     // Sheet 3: Hướng dẫn
     const dataSheet3 = [
       { 'Mục': '1. Phạm vi', 'Nội dung': 'Biểu mẫu phục vụ khảo sát nhu cầu đào tạo toàn hệ thống Agribank năm 2027 dành cho các đơn vị.' },
-      { 'Mục': '2. Cách nhập Sheet 1 (Nhu_Cau_Dao_Tao)', 'Nội dung': 'Điền số lượng cán bộ đăng ký tham gia vào cột [Đăng Ký Học Năm 2027 (Số lượng)] (phải là số nguyên >= 0). Nếu có danh sách họ tên cán bộ, điền vào cột [Đăng Ký Học Năm 2027 (Họ tên)]. Bỏ trống hoặc điền 0 nếu không có nhu cầu.' },
+      { 'Mục': '2. Cách nhập Sheet 1 (Nhu_Cau_Dao_Tao)', 'Nội dung': 'Chỉ nhập số lượng vào 2 cột cuối: [Đã học (số lượng)] và [Đăng ký học năm 2027 (số lượng)] (nhập số nguyên >= 0). Các cột mô tả thông tin chuyên đề giữ nguyên không thay đổi.' },
       { 'Mục': '3. Cách nhập Sheet 2 (De_Xuat_Ngoai_Khung)', 'Nội dung': 'Dành cho các chuyên đề đặc thù ngoài khung chương trình của Agribank. Điền tên chuyên đề, đối tượng và số lượng dự kiến.' },
       { 'Mục': '4. Hỗ trợ', 'Nội dung': 'Nếu đơn vị không tự thao tác trên hệ thống, vui lòng gửi file Excel này về email Admin để được hỗ trợ tải lên.' }
     ];
