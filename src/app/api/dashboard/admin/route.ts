@@ -20,35 +20,57 @@ export async function GET(req: NextRequest) {
 
   const db = getDatabase();
 
+  // 0. Lấy cấu hình nhiệm vụ chiến dịch hiện tại
+  const campaignSettingRow = db.prepare("SELECT value FROM system_settings WHERE key = 'active_campaign_task'").get() as any;
+  const activeCampaignTask = campaignSettingRow?.value || 'AUTO';
+
   // 1. Lấy danh sách tất cả các đợt (Collections & Exams)
   const collections = db.prepare('SELECT id, code, title, status, created_at FROM collections ORDER BY id DESC').all() as any[];
   const exams = db.prepare('SELECT id, code, title, status, created_at, task_type FROM exams ORDER BY id DESC').all() as any[];
 
-  // Xác định activeExamId: chỉ chọn nếu có chỉ định hoặc có kỳ thi OPEN
-  let activeExamId = examIdParam ? parseInt(examIdParam) : null;
-  if (!activeExamId) {
-    const activeEx = exams.find(e => e.status === 'OPEN');
-    activeExamId = activeEx ? activeEx.id : null;
-  }
-  const selectedExam = activeExamId ? (exams.find(e => e.id === activeExamId) || null) : null;
-
-  // Xác định activeCollectionId: chỉ chọn nếu có chỉ định hoặc có đợt OPEN
+  // Xác định activeCollectionId: đồng bộ hoàn toàn với /api/training-reports
   let activeCollectionId = collectionIdParam ? parseInt(collectionIdParam) : null;
   if (!activeCollectionId) {
-    if (selectedExam) {
-      // Tự động liên kết collection nếu kỳ thi đang chọn là đợt khảo sát đào tạo
-      const matchingColl = collections.find(c => c.code === selectedExam.code || c.title === selectedExam.title);
-      if (matchingColl) {
-        activeCollectionId = matchingColl.id;
-      }
+    // 1. Ưu tiên đợt OPEN có bài nộp khảo sát
+    const openWithSubs = db.prepare(`
+      SELECT c.id FROM collections c
+      WHERE c.status = 'OPEN' AND c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
+      ORDER BY c.id DESC LIMIT 1
+    `).get() as any;
+
+    if (openWithSubs?.id) {
+      activeCollectionId = openWithSubs.id;
+    } else {
+      // 2. Đợt OPEN mới nhất
+      const activeColl = db.prepare("SELECT id FROM collections WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
+      activeCollectionId = activeColl?.id || null;
     }
+
     if (!activeCollectionId) {
-      const activeColl = collections.find(c => c.status === 'OPEN');
-      activeCollectionId = activeColl ? activeColl.id : null;
+      // 3. Đợt bất kỳ có bài nộp hoặc đợt đầu tiên
+      const anyWithSubs = db.prepare(`
+        SELECT c.id FROM collections c
+        WHERE c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
+        ORDER BY c.id DESC LIMIT 1
+      `).get() as any;
+      activeCollectionId = anyWithSubs?.id || (collections[0]?.id ?? 1);
     }
   }
-
   const selectedCollection = activeCollectionId ? (collections.find(c => c.id === activeCollectionId) || null) : null;
+
+  // Xác định activeExamId:
+  let activeExamId = examIdParam ? parseInt(examIdParam) : null;
+  if (!activeExamId) {
+    if (activeCampaignTask === 'TRAINING_DEMAND' || formFilterParam === 'TRAINING_DEMAND') {
+      const trainExam = exams.find(e => e.task_type === 'TRAINING_DEMAND' || e.code === selectedCollection?.code || e.title === selectedCollection?.title);
+      if (trainExam) activeExamId = trainExam.id;
+    }
+    if (!activeExamId) {
+      const activeEx = exams.find(e => e.status === 'OPEN');
+      activeExamId = activeEx ? activeEx.id : (exams[0]?.id ?? null);
+    }
+  }
+  const selectedExam = activeExamId ? (exams.find(e => e.id === activeExamId) || null) : null;
 
   // 2. Lấy toàn bộ Đơn vị kèm thông tin phân cấp & vùng miền
   const allUnits = db.prepare('SELECT id, unit_code, unit_name, user_account, status, unit_type, region, parent_unit_id FROM units ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC').all() as any[];
@@ -67,7 +89,7 @@ export async function GET(req: NextRequest) {
   // 4. Lấy dữ liệu Khảo sát Nhu cầu Đào tạo (training_demand_submissions)
   const trainingSubmissions = activeCollectionId ? db.prepare(`
     SELECT ts.id, ts.unit_id, ts.version, ts.status, ts.submitted_at, ts.updated_at,
-           (SELECT COUNT(*) FROM training_demand_programs WHERE submission_id = ts.id) as program_count,
+           (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
            (
              COALESCE((
                SELECT SUM(dt.participant_count)
@@ -98,6 +120,7 @@ export async function GET(req: NextRequest) {
   let errorCandidates = 0;
 
   let trainingSubmittedCount = 0;
+  let trainingReopenedCount = 0;
   let trainingDraftCount = 0;
   let totalTrainingDemand = 0;
 
@@ -136,7 +159,7 @@ export async function GET(req: NextRequest) {
         trainingSubmittedCount++;
       } else if (tr.status === 'REOPENED') {
         trainingStatus = 'MỞ_LẠI';
-        trainingSubmittedCount++; // 1.4: Bản chính thức trước đó vẫn tính là đã nộp (đang mở lại)
+        trainingReopenedCount++;
       } else {
         trainingStatus = 'ĐANG_SOẠN';
         trainingDraftCount++;
@@ -144,8 +167,13 @@ export async function GET(req: NextRequest) {
     }
 
     // Trạng thái tổng hợp dựa trên formFilter hoặc đợt đang chọn
-    const isTrainingSelected = formFilterParam === 'TRAINING_DEMAND' || (selectedExam && (selectedExam.task_type === 'TRAINING_DEMAND' || selectedExam.code.startsWith('KS') || selectedExam.title.toLowerCase().includes('khảo sát')));
-    const isCandidateSelected = formFilterParam === 'CANDIDATE_LIST' || (selectedExam && selectedExam.task_type === 'CANDIDATE_EXAM');
+    const isTrainingSelected = formFilterParam === 'TRAINING_DEMAND' ||
+      activeCampaignTask === 'TRAINING_DEMAND' ||
+      (formFilterParam !== 'CANDIDATE_LIST' && activeCampaignTask !== 'CANDIDATE_EXAM' && selectedExam && (selectedExam.task_type === 'TRAINING_DEMAND' || selectedExam.code.startsWith('KS') || selectedExam.title.toLowerCase().includes('khảo sát')));
+
+    const isCandidateSelected = formFilterParam === 'CANDIDATE_LIST' ||
+      (activeCampaignTask === 'CANDIDATE_EXAM' && formFilterParam !== 'TRAINING_DEMAND') ||
+      (formFilterParam !== 'TRAINING_DEMAND' && activeCampaignTask !== 'TRAINING_DEMAND' && selectedExam && selectedExam.task_type === 'CANDIDATE_EXAM');
 
     let overallStatus: 'CHƯA_NỘP' | 'ĐÃ_NỘP' | 'CÓ_LỖI' | 'ĐANG_SOẠN' | 'MỞ_LẠI' = 'CHƯA_NỘP';
 
@@ -219,11 +247,22 @@ export async function GET(req: NextRequest) {
   });
 
   // Tính thống kê theo Vùng miền và Phân loại
-  const regionSummary: Record<string, { total: number; examSubmitted: number; trainingSubmitted: number }> = {};
+  const regionSummary: Record<string, { total: number; examSubmitted: number; trainingSubmitted: number }> = {
+    MIEN_BAC: { total: 0, examSubmitted: 0, trainingSubmitted: 0 },
+    MIEN_TRUNG: { total: 0, examSubmitted: 0, trainingSubmitted: 0 },
+    TAY_NGUYEN: { total: 0, examSubmitted: 0, trainingSubmitted: 0 },
+    MIEN_NAM: { total: 0, examSubmitted: 0, trainingSubmitted: 0 }
+  };
   const typeSummary: Record<string, { total: number; examSubmitted: number; trainingSubmitted: number }> = {};
 
   unitList.forEach(u => {
-    const reg = u.region || 'MIEN_BAC';
+    let reg = 'MIEN_BAC';
+    const regRaw = (u.region || '').trim().toUpperCase();
+    if (regRaw.includes('TRUNG')) reg = 'MIEN_TRUNG';
+    else if (regRaw.includes('NAM')) reg = 'MIEN_NAM';
+    else if (regRaw.includes('TAY') || regRaw.includes('NGUYEN')) reg = 'TAY_NGUYEN';
+    else reg = 'MIEN_BAC';
+
     const typ = u.unitType || 'BRANCH_L1';
 
     if (!regionSummary[reg]) regionSummary[reg] = { total: 0, examSubmitted: 0, trainingSubmitted: 0 };
@@ -247,9 +286,6 @@ export async function GET(req: NextRequest) {
     ORDER BY f.display_order ASC
   `).all(activeCollectionId) as any[] : [];
 
-  const campaignSettingRow = db.prepare("SELECT value FROM system_settings WHERE key = 'active_campaign_task'").get() as any;
-  const activeCampaignTask = campaignSettingRow?.value || 'AUTO';
-
   return NextResponse.json({
     collections,
     exams,
@@ -266,8 +302,10 @@ export async function GET(req: NextRequest) {
       validCandidates,
       errorCandidates,
       trainingSubmittedCount,
-      trainingPendingCount: allUnits.length - trainingSubmittedCount,
+      trainingReopenedCount,
       trainingDraftCount,
+      trainingNotSubmittedCount: Math.max(0, allUnits.length - trainingSubmittedCount - trainingReopenedCount - trainingDraftCount),
+      trainingPendingCount: Math.max(0, allUnits.length - trainingSubmittedCount),
       totalTrainingDemand,
       masterEmployeesCount: totalMasterCount
     },

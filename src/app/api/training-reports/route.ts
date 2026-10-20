@@ -230,7 +230,19 @@ export async function GET(req: NextRequest) {
         SELECT ts.id, ts.unit_id, ts.status, ts.submitted_at, ts.updated_at,
                (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
                (SELECT COUNT(dt.id) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id AND dt.participant_count > 0) as topic_count,
-               (SELECT COALESCE(SUM(dt.participant_count), 0) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id) as total_participants
+               (
+                 COALESCE((
+                   SELECT SUM(dt.participant_count)
+                   FROM training_demand_program_topics dt
+                   JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+                   WHERE dp.submission_id = ts.id
+                 ), 0) +
+                 COALESCE((
+                   SELECT SUM(participant_count)
+                   FROM training_demand_proposals
+                   WHERE submission_id = ts.id
+                 ), 0)
+               ) as total_participants
         FROM training_demand_submissions ts
         WHERE ts.collection_id = ? AND ts.id IN (
           SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
@@ -515,7 +527,19 @@ export async function GET(req: NextRequest) {
           SELECT ts.id, ts.unit_id, ts.status, ts.submitted_at,
                  (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
                  (SELECT COUNT(dt.id) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id AND dt.participant_count > 0) as topic_count,
-                 (SELECT COALESCE(SUM(dt.participant_count), 0) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id) as total_participants
+                 (
+                 COALESCE((
+                   SELECT SUM(dt.participant_count)
+                   FROM training_demand_program_topics dt
+                   JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+                   WHERE dp.submission_id = ts.id
+                 ), 0) +
+                 COALESCE((
+                   SELECT SUM(participant_count)
+                   FROM training_demand_proposals
+                   WHERE submission_id = ts.id
+                 ), 0)
+               ) as total_participants
           FROM training_demand_submissions ts
           WHERE ts.collection_id = ? AND ts.id IN (
             SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id

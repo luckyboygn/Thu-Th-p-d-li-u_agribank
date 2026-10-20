@@ -43,6 +43,8 @@ interface AdminSummary {
   trainingSubmittedCount: number;
   trainingPendingCount: number;
   trainingDraftCount: number;
+  trainingReopenedCount?: number;
+  trainingNotSubmittedCount?: number;
   totalTrainingDemand: number;
   masterEmployeesCount: number;
 }
@@ -150,6 +152,7 @@ function AdminDashboardContent() {
       });
       if (res.ok) {
         setActiveCampaignTask(newTask);
+        await loadData(undefined, undefined, categoryFilter);
       } else {
         const errJson = await res.json();
         alert(errJson.error || 'Lỗi khi cập nhật cấu hình nhiệm vụ');
@@ -294,8 +297,15 @@ function AdminDashboardContent() {
     return ex.task_type === 'TRAINING_DEMAND' || title.includes('khảo sát') || title.includes('đào tạo') || title.includes('nhu cầu') || code.startsWith('ks');
   }, [exams, selectedExamId]);
 
-  const isTrainingOnly = categoryFilter === 'TRAINING_DEMAND' || (categoryFilter === 'ALL' && isSelectedExamTraining) || (activeCampaignTask === 'TRAINING_DEMAND' && isSelectedExamTraining);
-  const isCandidateOnly = categoryFilter === 'CANDIDATE_LIST' || (categoryFilter === 'ALL' && !isSelectedExamTraining);
+  const isTrainingOnly =
+    categoryFilter === 'TRAINING_DEMAND' ||
+    (categoryFilter === 'ALL' && activeCampaignTask === 'TRAINING_DEMAND') ||
+    (categoryFilter === 'ALL' && activeCampaignTask !== 'CANDIDATE_EXAM' && isSelectedExamTraining);
+
+  const isCandidateOnly =
+    categoryFilter === 'CANDIDATE_LIST' ||
+    (categoryFilter === 'ALL' && activeCampaignTask === 'CANDIDATE_EXAM') ||
+    (categoryFilter === 'ALL' && activeCampaignTask !== 'TRAINING_DEMAND' && !isSelectedExamTraining);
 
   // Logic lọc dữ liệu đơn vị theo bộ lọc
   const filteredUnits = useMemo(() => {
@@ -452,11 +462,14 @@ function AdminDashboardContent() {
     ? summary?.trainingSubmittedCount || 0
     : isCandidateOnly
     ? summary?.completedUnits || summary?.uploadedUnits || 0
-    : Math.max(summary?.trainingSubmittedCount || 0, summary?.completedUnits || summary?.uploadedUnits || 0);
+    : (activeCampaignTask === 'TRAINING_DEMAND' ? (summary?.trainingSubmittedCount || 0) : Math.max(summary?.trainingSubmittedCount || 0, summary?.completedUnits || summary?.uploadedUnits || 0));
 
-  const pendingCount = totalUnits - submittedCount;
+  const draftCount = isTrainingOnly ? (summary?.trainingDraftCount || 0) : 0;
+  const reopenedCount = isTrainingOnly ? (summary?.trainingReopenedCount || 0) : 0;
+  const pendingCount = isTrainingOnly
+    ? (summary?.trainingNotSubmittedCount ?? (totalUnits - submittedCount - draftCount - reopenedCount))
+    : totalUnits - submittedCount;
   const errorCount = isTrainingOnly ? 0 : summary?.errorUnits || 0;
-  const draftCount = isTrainingOnly ? summary?.trainingDraftCount || 0 : 0;
 
   return (
     <div className="space-y-6">
@@ -604,7 +617,7 @@ function AdminDashboardContent() {
         <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
-              {isTrainingOnly ? 'Đã Gửi Khảo Sát' : isCandidateOnly ? 'Đã Gửi Danh Sách' : 'Đã Gửi Dữ Liệu'}
+              {isTrainingOnly ? 'Đã Nộp Khảo Sát' : isCandidateOnly ? 'Đã Gửi Danh Sách' : 'Đã Gửi Dữ Liệu'}
             </span>
             <span className="p-2 bg-emerald-50 rounded-xl text-emerald-700">
               <CheckCircle2 className="w-4 h-4" />
@@ -613,7 +626,7 @@ function AdminDashboardContent() {
           <div className="mt-4">
             <div className="text-3xl font-black text-emerald-700">{submittedCount}</div>
             <div className="text-xs text-emerald-600 font-semibold mt-1">
-              Đạt {Math.round((submittedCount / totalUnits) * 100)}% tổng số đơn vị
+              Đạt {Math.round((submittedCount / totalUnits) * 100)}% hoàn thành ({submittedCount}/{totalUnits} đơn vị)
             </div>
           </div>
         </div>
@@ -622,7 +635,7 @@ function AdminDashboardContent() {
         <div className="bg-white rounded-2xl p-5 shadow-xs border border-slate-200 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">
-              {isTrainingOnly ? 'Chưa Gửi / Đang Soạn' : 'Chưa Gửi Hồ Sơ'}
+              {isTrainingOnly ? 'Chưa Gửi Hồ Sơ' : 'Chưa Gửi Hồ Sơ'}
             </span>
             <span className="w-6 h-6 rounded-full bg-amber-500 text-slate-950 text-[11px] font-black flex items-center justify-center shadow-xs">
               {pendingCount}
@@ -630,10 +643,20 @@ function AdminDashboardContent() {
           </div>
           <div className="mt-4">
             <div className="text-3xl font-black text-amber-700">{pendingCount}</div>
-            <div className="text-xs text-slate-400 mt-1">
-              {isTrainingOnly
-                ? draftCount > 0 ? `${draftCount} đơn vị đang soạn thảo` : 'Đang tiếp tục hoàn thiện kê khai'
-                : draftCount > 0 ? `${draftCount} đơn vị đang soạn thảo` : 'Đang chờ nộp hồ sơ'}
+            <div className="text-xs text-slate-500 mt-1">
+              {isTrainingOnly ? (
+                draftCount > 0 || reopenedCount > 0 ? (
+                  <span>
+                    {draftCount > 0 && <span className="font-semibold text-blue-700">{draftCount} đang soạn</span>}
+                    {draftCount > 0 && reopenedCount > 0 && <span>, </span>}
+                    {reopenedCount > 0 && <span className="font-semibold text-amber-700">{reopenedCount} đang mở lại</span>}
+                  </span>
+                ) : (
+                  'Cần đôn đốc nộp hồ sơ'
+                )
+              ) : (
+                draftCount > 0 ? `${draftCount} đơn vị đang soạn thảo` : 'Đang chờ nộp hồ sơ'
+              )}
             </div>
           </div>
         </div>
@@ -843,7 +866,7 @@ function AdminDashboardContent() {
                   statusFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Tất cả
+                Tất cả ({totalUnits})
               </button>
               <button
                 onClick={() => { setStatusFilter('SUBMITTED'); setCurrentPage(1); }}
@@ -852,8 +875,19 @@ function AdminDashboardContent() {
                 }`}
               >
                 <CheckCircle2 className="w-3 h-3" />
-                <span>Đã nộp</span>
+                <span>Đã nộp ({submittedCount})</span>
               </button>
+              {isTrainingOnly && (draftCount > 0 || reopenedCount > 0) && (
+                <button
+                  onClick={() => { setStatusFilter('DRAFT'); setCurrentPage(1); }}
+                  className={`px-2 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1 ${
+                    statusFilter === 'DRAFT' ? 'bg-blue-600 text-white shadow-xs' : 'text-blue-800 hover:bg-blue-100'
+                  }`}
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>Bản nháp ({draftCount + reopenedCount})</span>
+                </button>
+              )}
               <button
                 onClick={() => { setStatusFilter('NOT_YET'); setCurrentPage(1); }}
                 className={`px-2 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1 ${
@@ -861,7 +895,7 @@ function AdminDashboardContent() {
                 }`}
               >
                 <XCircle className="w-3 h-3" />
-                <span>Chưa nộp</span>
+                <span>Chưa nộp ({pendingCount})</span>
               </button>
               {!isTrainingOnly && (
                 <button
@@ -871,7 +905,7 @@ function AdminDashboardContent() {
                   }`}
                 >
                   <AlertTriangle className="w-3 h-3" />
-                  <span>Có lỗi</span>
+                  <span>Có lỗi ({errorCount})</span>
                 </button>
               )}
             </div>
