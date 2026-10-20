@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest, isCentralAdmin } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { triggerCloudSync } from '@/lib/cloud-sync';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // GET: Lấy cấu hình hệ thống
 export async function GET(req: NextRequest) {
@@ -53,6 +57,8 @@ export async function POST(req: NextRequest) {
       action: 'UPDATE_SYSTEM_SETTING',
       details: { key, oldValue, newValue: String(value) }
     });
+
+    triggerCloudSync().catch(() => {});
 
     return NextResponse.json({
       success: true,

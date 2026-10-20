@@ -5,7 +5,11 @@ import { logAudit } from '@/lib/audit';
 import { createSubmissionReceipt, calculateTrainingDemandParticipants, getTrainingDemandProgramsSummary } from '@/lib/receipt';
 import { matchUnitFromFilename } from '@/lib/unit-matcher';
 import { parseTrainingDemandExcel } from '@/lib/training-excel-parser';
+import { triggerCloudSync } from '@/lib/cloud-sync';
 import * as xlsx from 'xlsx';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // 1. GET: Lấy danh sách các đơn vị và đợt khảo sát để phục vụ giao diện gán thủ công nếu cần
 export async function GET(req: NextRequest) {
@@ -439,6 +443,10 @@ export async function POST(req: NextRequest) {
             message: `Lỗi ghi cơ sở dữ liệu: ${subErr.message}`
           });
         }
+      }
+
+      if (successCount > 0) {
+        triggerCloudSync().catch(() => {});
       }
 
       return NextResponse.json({

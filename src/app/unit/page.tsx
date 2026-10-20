@@ -240,9 +240,10 @@ function UnitDashboardContent() {
       const unitQueryParams = new URLSearchParams();
       if (targetExamId) unitQueryParams.set('examId', String(targetExamId));
       if (unitIdParam) unitQueryParams.set('unitId', String(unitIdParam));
+      unitQueryParams.set('_t', String(Date.now()));
 
       // 1. Fetch dữ liệu riêng của đơn vị hiện tại
-      const res = await fetch(`/api/dashboard/unit${unitQueryParams.toString() ? `?${unitQueryParams.toString()}` : ''}`);
+      const res = await fetch(`/api/dashboard/unit?${unitQueryParams.toString()}`, { cache: 'no-store' });
       const dashData = await res.json();
       setData(dashData);
       const resolvedExamId = dashData.exam?.id || targetExamId || null;
@@ -252,8 +253,9 @@ function UnitDashboardContent() {
       try {
         const tdQueryParams = new URLSearchParams();
         if (unitIdParam) tdQueryParams.set('unitId', String(unitIdParam));
-        const tdUrl = `/api/training-demand${tdQueryParams.toString() ? `?${tdQueryParams.toString()}` : ''}`;
-        const tdRes = await fetch(tdUrl);
+        tdQueryParams.set('_t', String(Date.now()));
+        const tdUrl = `/api/training-demand?${tdQueryParams.toString()}`;
+        const tdRes = await fetch(tdUrl, { cache: 'no-store' });
         if (tdRes.ok) {
           const tdJson = await tdRes.json();
           setTrainingData(tdJson);
@@ -320,6 +322,24 @@ function UnitDashboardContent() {
 
   useEffect(() => {
     loadData();
+
+    // Tự động đồng bộ số liệu tức thì khi quay lại tab và định kỳ nền mỗi 25 giây
+    const handleSync = () => {
+      if (document.visibilityState === 'visible') {
+        loadData();
+      }
+    };
+
+    window.addEventListener('focus', handleSync);
+    document.addEventListener('visibilitychange', handleSync);
+
+    const intervalId = setInterval(handleSync, 25000);
+
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      document.removeEventListener('visibilitychange', handleSync);
+      clearInterval(intervalId);
+    };
   }, []);
 
   // 1. CHỌN FILE VÀ GỌI PREVIEW

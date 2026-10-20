@@ -183,8 +183,11 @@ function AdminDashboardContent() {
       if (targetExamId) queryParams.set('examId', String(targetExamId));
       if (targetCollectionId) queryParams.set('collectionId', String(targetCollectionId));
       if (catFilter !== 'ALL') queryParams.set('formFilter', catFilter);
+      queryParams.set('_t', String(Date.now()));
 
-      const dashRes = await fetch(`/api/dashboard/admin?${queryParams.toString()}`);
+      const dashRes = await fetch(`/api/dashboard/admin?${queryParams.toString()}`, {
+        cache: 'no-store'
+      });
       const dashData = await dashRes.json();
 
       setSummary(dashData.summary);
@@ -212,6 +215,30 @@ function AdminDashboardContent() {
       categoryFilter
     );
   }, [examIdParam, collectionIdParam, categoryFilter]);
+
+  // Tự động đồng bộ số liệu tức thì khi quay lại tab và định kỳ nền mỗi 25 giây
+  useEffect(() => {
+    const handleSync = () => {
+      if (document.visibilityState === 'visible') {
+        loadData(
+          selectedExamId || undefined,
+          selectedCollectionId || undefined,
+          categoryFilter
+        );
+      }
+    };
+
+    window.addEventListener('focus', handleSync);
+    document.addEventListener('visibilitychange', handleSync);
+
+    const intervalId = setInterval(handleSync, 25000);
+
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      document.removeEventListener('visibilitychange', handleSync);
+      clearInterval(intervalId);
+    };
+  }, [selectedExamId, selectedCollectionId, categoryFilter]);
 
   const openUnitDetail = async (unit: UnitRow) => {
     setSelectedUnitDetail(unit);

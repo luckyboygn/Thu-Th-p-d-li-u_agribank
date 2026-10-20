@@ -220,8 +220,9 @@ function UnitTrainingDemandContent() {
       const params = new URLSearchParams();
       if (targetCollId) params.set('collectionId', targetCollId.toString());
       if (unitIdParam) params.set('unitId', unitIdParam);
-      const url = `/api/training-demand${params.toString() ? '?' + params.toString() : ''}`;
-      const res = await fetch(url);
+      params.set('_t', String(Date.now()));
+      const url = `/api/training-demand?${params.toString()}`;
+      const res = await fetch(url, { cache: 'no-store' });
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Lỗi tải dữ liệu');
       setData(resData);
@@ -276,7 +277,22 @@ function UnitTrainingDemandContent() {
     initUser();
     loadDemandData();
     loadCatalogPrograms();
-  }, []);
+
+    // Tự động kiểm tra trạng thái bài nộp mới nhất khi quay lại tab
+    const handleSync = () => {
+      if (document.visibilityState === 'visible' && !selectedProgram && !isDirty && !proposalsDirty) {
+        loadDemandData();
+      }
+    };
+
+    window.addEventListener('focus', handleSync);
+    document.addEventListener('visibilitychange', handleSync);
+
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      document.removeEventListener('visibilitychange', handleSync);
+    };
+  }, [selectedProgram, isDirty, proposalsDirty]);
 
   // 3. Khi chọn một Khung chương trình trong modal
   const handleSelectProgram = async (

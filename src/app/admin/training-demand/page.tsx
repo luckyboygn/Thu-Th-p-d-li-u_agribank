@@ -262,7 +262,7 @@ export default function AdminTrainingDemandPage() {
     try {
       setLoading(true);
       // 1. Summary metrics
-      const sumRes = await fetch('/api/training-reports?type=SUMMARY');
+      const sumRes = await fetch(`/api/training-reports?type=SUMMARY&_t=${Date.now()}`, { cache: 'no-store' });
       if (sumRes.ok) {
         const sumJson = await sumRes.json();
         setSummary(sumJson);
@@ -392,7 +392,7 @@ export default function AdminTrainingDemandPage() {
       try {
         setUnitReportLoading(true);
         setReopenSuccess('');
-        const res = await fetch(`/api/training-reports?type=BY_UNIT&unitId=${selectedUnitId}`);
+        const res = await fetch(`/api/training-reports?type=BY_UNIT&unitId=${selectedUnitId}&_t=${Date.now()}`, { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           setUnitReportData(data);
@@ -409,6 +409,32 @@ export default function AdminTrainingDemandPage() {
       }
     };
     fetchUnitReport();
+  }, [selectedUnitId]);
+
+  // Tự động đồng bộ số liệu tức thì khi quay lại tab và định kỳ nền mỗi 25 giây
+  useEffect(() => {
+    const handleSync = () => {
+      if (document.visibilityState === 'visible') {
+        loadSummaryAndBaseData();
+        if (selectedUnitId) {
+          fetch(`/api/training-reports?type=BY_UNIT&unitId=${selectedUnitId}&_t=${Date.now()}`, { cache: 'no-store' })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => { if (data) setUnitReportData(data); })
+            .catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('focus', handleSync);
+    document.addEventListener('visibilitychange', handleSync);
+
+    const intervalId = setInterval(handleSync, 25000);
+
+    return () => {
+      window.removeEventListener('focus', handleSync);
+      document.removeEventListener('visibilitychange', handleSync);
+      clearInterval(intervalId);
+    };
   }, [selectedUnitId]);
 
   // Load audit statistics for Stage 2

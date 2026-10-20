@@ -5,6 +5,9 @@ import { logAudit } from '@/lib/audit';
 import { isWindowOpen } from '@/lib/deadline';
 import { triggerCloudSync } from '@/lib/cloud-sync';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // 1. GET: Lấy thông tin hồ sơ khảo sát của đơn vị (bao gồm cả Programs và Positions nếu có)
 export async function GET(req: NextRequest) {
   const session = getSessionFromRequest(req);
@@ -230,6 +233,10 @@ export async function GET(req: NextRequest) {
     proposals,
     summary,
     reopenInfo
+  }, {
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
+    }
   });
 }
 

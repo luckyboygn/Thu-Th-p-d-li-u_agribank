@@ -3,6 +3,9 @@ import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 import * as xlsx from 'xlsx';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(req: NextRequest) {
   const session = getSessionFromRequest(req);
   if (!session) {
