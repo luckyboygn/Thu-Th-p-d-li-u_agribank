@@ -55,6 +55,23 @@ function runSchemaMigrations(db: DatabaseSync): void {
       console.warn('[DB Migration] Cảnh báo migration training_program_topics:', e.message);
     }
   }
+
+  // Migration 3: Đồng bộ nhiệm vụ chiến dịch mặc định về TRAINING_DEMAND (Khảo sát nhu cầu đào tạo 2027)
+  try {
+    const setting = db.prepare("SELECT value FROM system_settings WHERE key = 'active_campaign_task'").get() as any;
+    if (!setting || setting.value === 'CANDIDATE_EXAM') {
+      db.prepare(`
+        INSERT INTO system_settings (key, value, description, updated_at)
+        VALUES ('active_campaign_task', 'TRAINING_DEMAND', 'Nhiệm vụ trọng tâm đợt này (CANDIDATE_EXAM, TRAINING_DEMAND, BOTH, AUTO)', CURRENT_TIMESTAMP)
+        ON CONFLICT(key) DO UPDATE SET value = 'TRAINING_DEMAND', updated_at = CURRENT_TIMESTAMP
+      `).run();
+      console.log('[DB Migration] Đã đồng bộ active_campaign_task về TRAINING_DEMAND.');
+    }
+  } catch (e: any) {
+    if (!e.message?.includes('no such table')) {
+      console.warn('[DB Migration] Cảnh báo migration active_campaign_task:', e.message);
+    }
+  }
 }
 
 export function getDatabase(): DatabaseSync {

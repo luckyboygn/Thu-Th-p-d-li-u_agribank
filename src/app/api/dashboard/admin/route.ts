@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   // 0. Lấy cấu hình nhiệm vụ chiến dịch hiện tại
   const campaignSettingRow = db.prepare("SELECT value FROM system_settings WHERE key = 'active_campaign_task'").get() as any;
-  const activeCampaignTask = campaignSettingRow?.value || 'AUTO';
+  const activeCampaignTask = campaignSettingRow?.value || 'TRAINING_DEMAND';
 
   // 1. Lấy danh sách tất cả các đợt (Collections & Exams)
   const collections = db.prepare('SELECT id, code, title, status, created_at FROM collections ORDER BY id DESC').all() as any[];
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
   // Xác định activeExamId:
   let activeExamId = examIdParam ? parseInt(examIdParam) : null;
   if (!activeExamId) {
-    if (activeCampaignTask === 'TRAINING_DEMAND' || formFilterParam === 'TRAINING_DEMAND') {
+    if (activeCampaignTask === 'TRAINING_DEMAND' || formFilterParam === 'TRAINING_DEMAND' || activeCampaignTask !== 'CANDIDATE_EXAM') {
       const trainExam = exams.find(e => e.task_type === 'TRAINING_DEMAND' || e.code === selectedCollection?.code || e.title === selectedCollection?.title);
       if (trainExam) activeExamId = trainExam.id;
     }

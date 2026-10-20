@@ -109,7 +109,7 @@ function AdminDashboardContent() {
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<number | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
-  const [activeCampaignTask, setActiveCampaignTask] = useState<string>('CANDIDATE_EXAM');
+  const [activeCampaignTask, setActiveCampaignTask] = useState<string>('TRAINING_DEMAND');
   const [updatingCampaign, setUpdatingCampaign] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
@@ -327,12 +327,12 @@ function AdminDashboardContent() {
   const isTrainingOnly =
     categoryFilter === 'TRAINING_DEMAND' ||
     (categoryFilter === 'ALL' && activeCampaignTask === 'TRAINING_DEMAND') ||
+    (categoryFilter === 'ALL' && (summary?.trainingSubmittedCount || 0) > 0 && (summary?.completedUnits || 0) === 0) ||
     (categoryFilter === 'ALL' && activeCampaignTask !== 'CANDIDATE_EXAM' && isSelectedExamTraining);
 
   const isCandidateOnly =
     categoryFilter === 'CANDIDATE_LIST' ||
-    (categoryFilter === 'ALL' && activeCampaignTask === 'CANDIDATE_EXAM') ||
-    (categoryFilter === 'ALL' && activeCampaignTask !== 'TRAINING_DEMAND' && !isSelectedExamTraining);
+    (categoryFilter === 'ALL' && activeCampaignTask === 'CANDIDATE_EXAM' && (summary?.trainingSubmittedCount || 0) === 0);
 
   // Logic lọc dữ liệu đơn vị theo bộ lọc
   const filteredUnits = useMemo(() => {
@@ -491,11 +491,11 @@ function AdminDashboardContent() {
     ? summary?.completedUnits || summary?.uploadedUnits || 0
     : (activeCampaignTask === 'TRAINING_DEMAND' ? (summary?.trainingSubmittedCount || 0) : Math.max(summary?.trainingSubmittedCount || 0, summary?.completedUnits || summary?.uploadedUnits || 0));
 
-  const draftCount = isTrainingOnly ? (summary?.trainingDraftCount || 0) : 0;
-  const reopenedCount = isTrainingOnly ? (summary?.trainingReopenedCount || 0) : 0;
-  const pendingCount = isTrainingOnly
-    ? (summary?.trainingNotSubmittedCount ?? (totalUnits - submittedCount - draftCount - reopenedCount))
-    : totalUnits - submittedCount;
+  const draftCount = isCandidateOnly ? 0 : (summary?.trainingDraftCount || 0);
+  const reopenedCount = isCandidateOnly ? 0 : (summary?.trainingReopenedCount || 0);
+  const pendingCount = isCandidateOnly
+    ? totalUnits - submittedCount
+    : (summary?.trainingNotSubmittedCount ?? (totalUnits - submittedCount - draftCount - reopenedCount));
   const errorCount = isTrainingOnly ? 0 : summary?.errorUnits || 0;
 
   return (
@@ -689,7 +689,7 @@ function AdminDashboardContent() {
         </div>
 
         {/* Card 4: Có lỗi hoặc Tổng nhu cầu */}
-        {isTrainingOnly ? (
+        {!isCandidateOnly ? (
           <div className="bg-gradient-to-br from-teal-800 to-emerald-950 text-white rounded-2xl p-5 shadow-md flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-teal-200 uppercase tracking-wider">Tổng Đăng Ký Đào Tạo</span>
@@ -788,7 +788,11 @@ function AdminDashboardContent() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {['MIEN_BAC', 'MIEN_TRUNG', 'TAY_NGUYEN', 'MIEN_NAM'].map(rKey => {
             const rData = regionSummary[rKey] || { total: 0, examSubmitted: 0, trainingSubmitted: 0 };
-            const submitted = isTrainingOnly ? rData.trainingSubmitted : rData.examSubmitted;
+            const submitted = isCandidateOnly
+              ? rData.examSubmitted
+              : isTrainingOnly
+              ? rData.trainingSubmitted
+              : Math.max(rData.trainingSubmitted, rData.examSubmitted);
             const pct = rData.total > 0 ? Math.round((submitted / rData.total) * 100) : 0;
             const isSelected = regionFilter === rKey;
 
@@ -904,7 +908,7 @@ function AdminDashboardContent() {
                 <CheckCircle2 className="w-3 h-3" />
                 <span>Đã nộp ({submittedCount})</span>
               </button>
-              {isTrainingOnly && (draftCount > 0 || reopenedCount > 0) && (
+              {!isCandidateOnly && (draftCount > 0 || reopenedCount > 0) && (
                 <button
                   onClick={() => { setStatusFilter('DRAFT'); setCurrentPage(1); }}
                   className={`px-2 py-1 rounded-lg font-semibold transition-colors flex items-center gap-1 ${
