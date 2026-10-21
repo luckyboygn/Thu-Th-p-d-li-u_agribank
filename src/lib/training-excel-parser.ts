@@ -109,15 +109,17 @@ export function parseTrainingDemandExcel(
     }
 
     // Tự động giải phóng các ô gộp (merged cells) để dữ liệu không bị khuyết thiếu trên từng dòng
+    // Tối ưu: Gán trực tiếp tham chiếu originCell (không shallow copy) và giới hạn cột <= 15 để tiết kiệm RAM & CPU
     if (ws['!merges']) {
       for (const m of ws['!merges']) {
         const originCell = ws[xlsx.utils.encode_cell(m.s)];
         if (!originCell || originCell.v === undefined || originCell.v === null || originCell.v === '') continue;
         for (let r = m.s.r; r <= m.e.r; r++) {
           for (let c = m.s.c; c <= m.e.c; c++) {
+            if (c > 15) continue; // Khung biểu mẫu khảo sát chỉ dùng tối đa 15 cột
             const addr = xlsx.utils.encode_cell({ r, c });
             if (!ws[addr] || ws[addr].v === undefined || ws[addr].v === null || ws[addr].v === '') {
-              ws[addr] = { ...originCell };
+              ws[addr] = originCell;
             }
           }
         }

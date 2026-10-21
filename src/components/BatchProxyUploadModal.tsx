@@ -81,6 +81,21 @@ export default function BatchProxyUploadModal({
     results: any[];
   } | null>(null);
 
+  // Trạng thái tiến trình tải lên và phân tích thời gian thực
+  const [progress, setProgress] = useState<{
+    current: number;
+    total: number;
+    percent: number;
+    stage: 'idle' | 'analyzing' | 'executing' | 'completed';
+    message: string;
+  }>({
+    current: 0,
+    total: 0,
+    percent: 0,
+    stage: 'idle',
+    message: ''
+  });
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load danh sách collections và units khi modal mở
@@ -136,76 +151,137 @@ export default function BatchProxyUploadModal({
     await analyzeFiles(excelFiles);
   };
 
-  // Gửi file lên API để phân tích đối chiếu tên file và parse thử nội dung
+  // Kích thước nhóm gửi lên máy chủ mỗi lần (3 file/lượt) để tránh tràn bộ nhớ RAM (512MB) và nghẽn CPU Node.js
+  const CHUNK_SIZE = 3;
+
+  // Gửi file lên API theo từng nhóm nhỏ (Chunking) để phân tích đối chiếu tên file và parse nội dung mượt mà
   const analyzeFiles = async (fileList: File[]) => {
+    setIsAnalyzing(true);
+    const total = fileList.length;
+
+    setProgress({
+      current: 0,
+      total,
+      percent: 0,
+      stage: 'analyzing',
+      message: `Đang chuẩn bị phân tích ${total} tệp Excel...`
+    });
+
+    // Tạo danh sách ban đầu hiển thị ngay lập tức lên bảng giúp người dùng không cảm thấy ứng dụng bị đơ
+    const initialItems: AnalyzedItem[] = fileList.map((file, idx) => ({
+      id: `${file.name}_${idx}`,
+      file,
+      fileName: file.name,
+      fileSize: file.size,
+      matchStatus: 'NOT_FOUND',
+      confidence: 'NONE',
+      reasons: ['Đang chờ phân tích...'],
+      unit: null,
+      assignedUnitId: null,
+      selected: false
+    }));
+    setAnalyzedItems(initialItems);
+
     try {
-      setIsAnalyzing(true);
-      const fd = new FormData();
-      fileList.forEach(file => {
-        fd.append('files', file);
-      });
-      fd.append('mode', 'analyze');
+      for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = fileList.slice(i, i + CHUNK_SIZE);
+        const currentCount = Math.min(i + chunk.length, total);
+        const percent = Math.round((currentCount / total) * 100);
 
-      const res = await fetch('/api/training-demand/import-batch', {
-        method: 'POST',
-        body: fd
-      });
+        setProgress({
+          current: currentCount,
+          total,
+          percent,
+          stage: 'analyzing',
+          message: `Đang phân tích nhóm ${Math.floor(i / CHUNK_SIZE) + 1} (${currentCount}/${total} file: ${chunk.map(f => f.name).join(', ')})...`
+        });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Lỗi khi phân tích danh sách file');
+        const fd = new FormData();
+        chunk.forEach(file => {
+          fd.append('files', file);
+        });
+        fd.append('mode', 'analyze');
+
+        try {
+          const res = await fetch('/api/training-demand/import-batch', {
+            method: 'POST',
+            body: fd
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'Lỗi khi phân tích nhóm file');
+          }
+
+          const analyzedList = data.results || data.analyzed || [];
+          const analyzedMap = new Map<string, any>();
+          analyzedList.forEach((item: any) => {
+            analyzedMap.set(item.fileName, item);
+          });
+
+          // Cập nhật từng item vừa phân tích xong vào bảng ngay lập tức
+          setAnalyzedItems(prev => prev.map(existingItem => {
+            if (!analyzedMap.has(existingItem.fileName)) return existingItem;
+            const info = analyzedMap.get(existingItem.fileName);
+            const matchedUnit = info.matchedUnit || info.unit || null;
+            const rawStatus = info.matchStatus || 'NOT_FOUND';
+            const err = info.readError || info.parseError;
+            const isSafe = (rawStatus === 'MATCHED' || ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH'].includes(rawStatus)) && !err;
+
+            const unitObj: MatchedUnit | null = matchedUnit ? {
+              id: matchedUnit.id,
+              code: matchedUnit.unitCode || matchedUnit.code,
+              name: matchedUnit.unitName || matchedUnit.name,
+              shortName: matchedUnit.unitName || matchedUnit.name
+            } : null;
+
+            const summary = info.summary || info.parsedSummary;
+            const parsedSummaryObj = summary ? {
+              programsCount: summary.programCount ?? summary.programsCount ?? 0,
+              participantsCount: summary.totalParticipants ?? summary.participantsCount ?? 0,
+              positionsCount: summary.topicCount ?? summary.positionsCount ?? 0,
+              notesCount: summary.proposalCount ?? summary.notesCount ?? 0
+            } : undefined;
+
+            const reasons = info.reasons && info.reasons.length > 0
+              ? info.reasons
+              : (info.warning ? [info.warning] : []);
+
+            return {
+              ...existingItem,
+              matchStatus: rawStatus,
+              confidence: info.confidence || (isSafe ? 'HIGH' : 'NONE'),
+              reasons,
+              unit: unitObj,
+              assignedUnitId: unitObj?.id || null,
+              selected: isSafe && !err,
+              parsedSummary: parsedSummaryObj,
+              parseError: err
+            };
+          }));
+        } catch (chunkErr: any) {
+          console.error('Lỗi khi phân tích nhóm file:', chunkErr);
+          setAnalyzedItems(prev => prev.map(existingItem => {
+            if (chunk.some(f => f.name === existingItem.fileName)) {
+              return {
+                ...existingItem,
+                matchStatus: 'INVALID_EXCEL',
+                parseError: chunkErr.message || 'Lỗi khi gửi yêu cầu phân tích',
+                reasons: ['Lỗi phân tích hoặc phản hồi từ máy chủ'],
+                selected: false
+              };
+            }
+            return existingItem;
+          }));
+        }
       }
 
-      const analyzedList = data.results || data.analyzed || [];
-      const analyzedMap = new Map<string, any>();
-      analyzedList.forEach((item: any) => {
-        analyzedMap.set(item.fileName, item);
-      });
-
-      const items: AnalyzedItem[] = fileList.map((file, idx) => {
-        const info = analyzedMap.get(file.name) || {};
-        const matchedUnit = info.matchedUnit || info.unit || null;
-        const rawStatus = info.matchStatus || 'NOT_FOUND';
-        const err = info.readError || info.parseError;
-        const isSafe = (rawStatus === 'MATCHED' || ['EXACT_CODE', 'EXACT_NAME', 'STRONG_MATCH'].includes(rawStatus)) && !err;
-        
-        const unitObj: MatchedUnit | null = matchedUnit ? {
-          id: matchedUnit.id,
-          code: matchedUnit.unitCode || matchedUnit.code,
-          name: matchedUnit.unitName || matchedUnit.name,
-          shortName: matchedUnit.unitName || matchedUnit.name
-        } : null;
-
-        const summary = info.summary || info.parsedSummary;
-        const parsedSummaryObj = summary ? {
-          programsCount: summary.programCount ?? summary.programsCount ?? 0,
-          participantsCount: summary.totalParticipants ?? summary.participantsCount ?? 0,
-          positionsCount: summary.topicCount ?? summary.positionsCount ?? 0,
-          notesCount: summary.proposalCount ?? summary.notesCount ?? 0
-        } : undefined;
-
-        const reasons = info.reasons && info.reasons.length > 0
-          ? info.reasons
-          : (info.warning ? [info.warning] : []);
-
-        return {
-          id: `${file.name}_${idx}`,
-          file,
-          fileName: file.name,
-          fileSize: file.size,
-          matchStatus: rawStatus,
-          confidence: info.confidence || (isSafe ? 'HIGH' : 'NONE'),
-          reasons,
-          unit: unitObj,
-          assignedUnitId: unitObj?.id || null,
-          // An toàn tuyệt đối: Chỉ file khớp chuẩn và không có lỗi mới tự động tick chọn!
-          selected: isSafe && !err,
-          parsedSummary: parsedSummaryObj,
-          parseError: err
-        };
-      });
-
-      setAnalyzedItems(items);
+      setProgress(prev => ({
+        ...prev,
+        stage: 'idle',
+        percent: 100,
+        message: `Đã hoàn tất phân tích ${total} tệp Excel!`
+      }));
     } catch (err: any) {
       alert('Không thể phân tích danh sách file: ' + err.message);
     } finally {
@@ -254,7 +330,7 @@ export default function BatchProxyUploadModal({
     }));
   };
 
-  // Tiến hành Nộp hộ chính thức các file được chọn
+  // Tiến hành Nộp hộ chính thức các file được chọn theo từng nhóm nhỏ (Chunking)
   const handleExecuteUpload = async () => {
     const selectedList = analyzedItems.filter(item => item.selected && item.assignedUnitId);
     if (selectedList.length === 0) {
@@ -268,7 +344,7 @@ export default function BatchProxyUploadModal({
     }
 
     const confirmMsg = `Bạn có chắc chắn muốn nộp hộ dữ liệu cho ${selectedList.length} chi nhánh đã chọn không?\n\n` +
-      `- Dữ liệu sẽ được lưu chính thức vào hệ thống.\n` +
+      `- Dữ liệu sẽ được lưu chính thức vào hệ thống theo từng đợt để đảm bảo tốc độ và an toàn.\n` +
       `- Trạng thái của ${selectedList.length} đơn vị sẽ tự động chuyển thành "ĐÃ GỬI CHÍNH THỨC".\n` +
       `- Tạo biên nhận điện tử và ghi nhận nhật ký hỗ trợ.`;
 
@@ -276,55 +352,118 @@ export default function BatchProxyUploadModal({
 
     try {
       setIsExecuting(true);
-      const fd = new FormData();
-      selectedList.forEach(item => {
-        fd.append('files', item.file);
+      const total = selectedList.length;
+      let totalSuccess = 0;
+      let totalFailed = 0;
+      const accumulatedResults: any[] = [];
+
+      setProgress({
+        current: 0,
+        total,
+        percent: 0,
+        stage: 'executing',
+        message: `Bắt đầu nộp hộ ${total} đơn vị...`
       });
 
-      const assignments = selectedList.map(item => ({
-        fileName: item.fileName,
-        unitId: item.assignedUnitId,
-        selected: true
-      }));
+      for (let i = 0; i < total; i += CHUNK_SIZE) {
+        const chunk = selectedList.slice(i, i + CHUNK_SIZE);
+        const currentCount = Math.min(i + chunk.length, total);
+        const percent = Math.round((currentCount / total) * 100);
 
-      fd.append('assignments', JSON.stringify(assignments));
-      fd.append('collectionId', String(selectedCollectionId));
-      fd.append('mode', 'execute');
+        setProgress({
+          current: currentCount,
+          total,
+          percent,
+          stage: 'executing',
+          message: `Đang lưu & cấp biên nhận nhóm ${Math.floor(i / CHUNK_SIZE) + 1} (${currentCount}/${total}: ${chunk.map(c => c.fileName).join(', ')})...`
+        });
 
-      const res = await fetch('/api/training-demand/import-batch', {
-        method: 'POST',
-        body: fd
-      });
+        const fd = new FormData();
+        chunk.forEach(item => {
+          fd.append('files', item.file);
+        });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Có lỗi khi tiến hành nộp hộ');
+        const assignments = chunk.map(item => ({
+          fileName: item.fileName,
+          unitId: item.assignedUnitId,
+          selected: true
+        }));
+
+        fd.append('assignments', JSON.stringify(assignments));
+        fd.append('collectionId', String(selectedCollectionId));
+        fd.append('mode', 'execute');
+
+        try {
+          const res = await fetch('/api/training-demand/import-batch', {
+            method: 'POST',
+            body: fd
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'Có lỗi khi tiến hành nộp hộ nhóm file này');
+          }
+
+          const resList = data.results || [];
+          accumulatedResults.push(...resList);
+          totalSuccess += data.successCount || 0;
+          totalFailed += data.failedCount || 0;
+
+          const resultMap = new Map<string, any>();
+          resList.forEach((r: any) => resultMap.set(r.fileName, r));
+
+          setAnalyzedItems(prev => prev.map(item => {
+            const r = resultMap.get(item.fileName);
+            if (r) {
+              return {
+                ...item,
+                executionResult: {
+                  status: r.status,
+                  message: r.message,
+                  receiptCode: r.receiptCode,
+                  totalParticipants: r.summary?.totalParticipants
+                }
+              };
+            }
+            return item;
+          }));
+        } catch (chunkErr: any) {
+          console.error('Lỗi nộp hộ nhóm:', chunkErr);
+          chunk.forEach(chunkItem => {
+            totalFailed++;
+            accumulatedResults.push({
+              fileName: chunkItem.fileName,
+              status: 'FAILED',
+              message: chunkErr.message || 'Lỗi kết nối máy chủ'
+            });
+            setAnalyzedItems(prev => prev.map(item => {
+              if (item.id === chunkItem.id) {
+                return {
+                  ...item,
+                  executionResult: {
+                    status: 'FAILED',
+                    message: chunkErr.message || 'Lỗi kết nối máy chủ'
+                  }
+                };
+              }
+              return item;
+            }));
+          });
+        }
       }
 
-      const resList = data.results || [];
-      const resultMap = new Map<string, any>();
-      resList.forEach((r: any) => resultMap.set(r.fileName, r));
-
-      setAnalyzedItems(prev => prev.map(item => {
-        const r = resultMap.get(item.fileName);
-        if (r) {
-          return {
-            ...item,
-            executionResult: {
-              status: r.status,
-              message: r.message,
-              receiptCode: r.receiptCode,
-              totalParticipants: r.summary?.totalParticipants
-            }
-          };
-        }
-        return item;
-      }));
-
       setExecutionResult({
-        successCount: data.successCount || 0,
-        failedCount: data.failedCount || 0,
-        results: data.results || []
+        successCount: totalSuccess,
+        failedCount: totalFailed,
+        results: accumulatedResults
+      });
+
+      setProgress({
+        current: total,
+        total,
+        percent: 100,
+        stage: 'completed',
+        message: `Hoàn tất nộp hộ: Thành công ${totalSuccess}, Thất bại ${totalFailed}`
       });
 
       if (onSuccess) {
@@ -515,13 +654,36 @@ export default function BatchProxyUploadModal({
                 </div>
               </div>
 
-              {/* Thông báo nếu đang phân tích */}
-              {isAnalyzing && (
-                <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 flex items-center gap-3 text-blue-800">
-                  <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
-                  <div className="text-xs">
-                    <p className="font-bold">Đang phân tích và đối chiếu an toàn danh sách {files.length} file...</p>
-                    <p className="text-blue-600 mt-0.5">Hệ thống đang đọc tên file, bóc tách cấu trúc Mẫu số 04 và kiểm tra xung đột mã chi nhánh.</p>
+              {/* Thanh tiến trình thời gian thực (Progress Bar) */}
+              {(isAnalyzing || isExecuting) && (
+                <div className="p-4 rounded-xl bg-slate-900 text-white shadow-lg border border-slate-700 space-y-2.5 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                      <span className="uppercase tracking-wider text-emerald-300 font-extrabold">
+                        {isAnalyzing ? 'Tiến trình phân tích tệp' : 'Tiến trình nộp hộ & cấp biên nhận'}
+                      </span>
+                    </span>
+                    <span className="font-mono font-bold text-emerald-300 bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-700 text-xs shadow-inner">
+                      {progress.current} / {progress.total} file ({progress.percent}%)
+                    </span>
+                  </div>
+
+                  {/* Thanh hiển thị % chạy mượt mà */}
+                  <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700">
+                    <div
+                      className="bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 h-full rounded-full transition-all duration-300 ease-out shadow-xs"
+                      style={{ width: `${Math.max(4, progress.percent)}%` }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-300">
+                    <p className="truncate max-w-2xl font-medium">
+                      {progress.message || 'Hệ thống đang xử lý từng cụm 3 file để tối ưu bộ nhớ RAM và không làm đơ giao diện...'}
+                    </p>
+                    <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                      Cụm 3 file / lượt
+                    </span>
                   </div>
                 </div>
               )}
@@ -682,6 +844,11 @@ export default function BatchProxyUploadModal({
                                     ))}
                                   </select>
                                 </div>
+                              ) : item.reasons[0] === 'Đang chờ phân tích...' ? (
+                                <div className="text-slate-400 text-xs italic flex items-center gap-1.5 py-1">
+                                  <RefreshCw className="w-3 h-3 animate-spin text-slate-400" />
+                                  <span>Đang chờ nhận diện...</span>
+                                </div>
                               ) : (
                                 <div className="space-y-1">
                                   <div className="text-amber-800 font-bold text-xs flex items-center gap-1">
@@ -776,15 +943,22 @@ export default function BatchProxyUploadModal({
                                   )}
 
                                   {isNotFound && (
-                                    <div className="p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold space-y-0.5">
-                                      <div className="flex items-center gap-1 font-bold text-amber-800">
-                                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                        <span>KHÔNG TÌM THẤY ĐƠN VỊ TRONG 155 CHI NHÁNH</span>
+                                    item.reasons[0] === 'Đang chờ phân tích...' ? (
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600">
+                                        <RefreshCw className="w-3 h-3 animate-spin text-slate-500" />
+                                        <span>Đang chờ phân tích...</span>
+                                      </span>
+                                    ) : (
+                                      <div className="p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold space-y-0.5">
+                                        <div className="flex items-center gap-1 font-bold text-amber-800">
+                                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                          <span>KHÔNG TÌM THẤY ĐƠN VỊ TRONG 155 CHI NHÁNH</span>
+                                        </div>
+                                        <p className="text-[10px] text-amber-800">
+                                          {item.reasons.join('. ')}
+                                        </p>
                                       </div>
-                                      <p className="text-[10px] text-amber-800">
-                                        {item.reasons.join('. ')}
-                                      </p>
-                                    </div>
+                                    )
                                   )}
 
                                   {isInvalidExcel && (
