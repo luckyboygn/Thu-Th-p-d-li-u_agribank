@@ -605,7 +605,7 @@ export default function AdminTrainingDemandPage() {
             <GraduationCap className="w-5 h-5" />
             <span>QUẢN LÝ THU THẬP & KHẢO SÁT ĐÀO TẠO</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">Khảo sát Nhu cầu Đào tạo ({summary?.totalUnits || units.length || 155} Đơn vị)</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Khảo sát Nhu cầu Đào tạo ({summary?.totalUnits || units.length || 203} Đơn vị)</h1>
           <p className="text-sm text-slate-500 mt-1">
             Quản trị Master Catalog, tổng hợp nhu cầu tự động theo Vị trí & Chuyên đề. Không cần nhận và ghép thủ công các file Excel từ từng đơn vị.
           </p>
@@ -628,9 +628,9 @@ export default function AdminTrainingDemandPage() {
             <Building2 className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs text-slate-500 font-medium">Tiến độ nộp ({summary?.totalUnits || units.length || 155} Đơn vị)</div>
+            <div className="text-xs text-slate-500 font-medium">Tiến độ nộp ({summary?.totalUnits || units.length || 203} Đơn vị)</div>
             <div className="text-xl font-bold text-slate-800">
-              {summary?.submittedUnits ?? 0} <span className="text-sm font-normal text-slate-500">/ {summary?.totalUnits ?? units.length ?? 155}</span>
+              {summary?.submittedUnits ?? 0} <span className="text-sm font-normal text-slate-500">/ {summary?.totalUnits ?? units.length ?? 203}</span>
             </div>
             <div className="text-xs text-emerald-600 font-medium mt-0.5">
               {summary?.totalUnits ? Math.round((summary.submittedUnits / summary.totalUnits) * 100) : 0}% hoàn thành
@@ -671,7 +671,7 @@ export default function AdminTrainingDemandPage() {
           <div>
             <div className="text-xs text-slate-500 font-medium">Chưa gửi chính thức</div>
             <div className="text-xl font-bold text-amber-600">
-              {summary?.pendingUnits ?? (summary?.totalUnits || units.length || 155)} <span className="text-sm font-normal text-slate-500">đơn vị</span>
+              {summary?.pendingUnits ?? (summary?.totalUnits || units.length || 203)} <span className="text-sm font-normal text-slate-500">đơn vị</span>
             </div>
             <div className="text-xs text-slate-500 font-medium mt-0.5">
               {summary?.draftUnits ?? 0} đơn vị đang soạn thảo
@@ -1253,14 +1253,14 @@ export default function AdminTrainingDemandPage() {
               </div>
 
               <div className="flex-1">
-                <label className="block text-xs font-semibold text-slate-500 mb-1">Chọn Đơn vị ({units.length || 155} đơn vị)</label>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Chọn Đơn vị ({units.length || 203} đơn vị)</label>
                 <select
                   value={selectedUnitId || 'ALL'}
                   onChange={(e) => setSelectedUnitId(e.target.value === 'ALL' ? 'ALL' : parseInt(e.target.value))}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
                 >
                   <option value="ALL" className="font-bold text-emerald-700 bg-emerald-50">
-                    ★ TẤT CẢ ĐƠN VỊ (Toàn mạng lưới {units.length || 155} Đơn vị) ★
+                    ★ TẤT CẢ ĐƠN VỊ (Toàn mạng lưới {units.length || 203} Đơn vị) ★
                   </option>
                   {filteredUnitsForSelect.map(u => (
                     <option key={u.id} value={u.id}>
@@ -1293,10 +1293,10 @@ export default function AdminTrainingDemandPage() {
                   <a
                     href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
                     className="inline-flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-bold shadow transition-colors"
-                    title="Xuất file Excel gồm 2 Sheet: Sheet 1 Tổng hợp 155 ĐV, Sheet 2 Chi tiết chuyên đề toàn bộ đơn vị"
+                    title="Xuất file Excel gồm 2 Sheet: Sheet 1 Tổng hợp, Sheet 2 Chi tiết chuyên đề toàn bộ đơn vị"
                   >
                     <Download className="w-4 h-4" />
-                    <span>Xuất Excel Toàn Bộ {units.length || 155} Đơn Vị</span>
+                    <span>Xuất Excel Toàn Bộ {units.length || 203} Đơn Vị</span>
                   </a>
                 </div>
               ) : (
@@ -1319,10 +1319,10 @@ export default function AdminTrainingDemandPage() {
                   <a
                     href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
                     className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-                    title="Xuất dữ liệu toàn bộ 155 đơn vị"
+                    title="Xuất dữ liệu toàn bộ đơn vị"
                   >
                     <Download className="w-4 h-4" />
-                    <span>Xuất Tất cả (155 ĐV)</span>
+                    <span>Xuất Tất cả ({units.length || 203} ĐV)</span>
                   </a>
                 </div>
               )}
@@ -1339,23 +1339,23 @@ export default function AdminTrainingDemandPage() {
           {unitReportLoading ? (
             <div className="bg-white p-12 text-center text-slate-500 rounded-xl border border-slate-200">
               <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-600" />
-              <span>Đang tải dữ liệu {selectedUnitId === 'ALL' ? 'toàn bộ 155 đơn vị...' : 'báo cáo của đơn vị...'}</span>
+              <span>Đang tải dữ liệu {selectedUnitId === 'ALL' ? 'toàn bộ đơn vị...' : 'báo cáo của đơn vị...'}</span>
             </div>
           ) : unitReportData?.isAllUnits ? (
-            /* CHẾ ĐỘ XEM TẤT CẢ 155 ĐƠN VỊ */
+            /* CHẾ ĐỘ XEM TẤT CẢ ĐƠN VỊ */
             <div className="space-y-4">
               {/* Thẻ KPI tổng hợp tiến độ toàn mạng lưới */}
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                   <p className="text-xs text-slate-500 font-semibold mb-1">Tổng đơn vị</p>
-                  <p className="text-2xl font-black text-slate-800">{unitReportData.stats?.totalUnits || units.length || 155}</p>
-                  <p className="text-[11px] text-slate-400 mt-1">Toàn bộ chi nhánh & phòng</p>
+                  <p className="text-2xl font-black text-slate-800">{unitReportData.stats?.totalUnits || units.length || 203}</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Toàn bộ chi nhánh & phòng ban</p>
                 </div>
                 <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-sm">
                   <p className="text-xs text-emerald-700 font-semibold mb-1">Đã nộp chính thức</p>
                   <p className="text-2xl font-black text-emerald-700">{unitReportData.stats?.submittedCount || 0}</p>
                   <p className="text-[11px] text-emerald-600 mt-1">
-                    {Math.round(((unitReportData.stats?.submittedCount || 0) / (unitReportData.stats?.totalUnits || 155)) * 100)}% hoàn thành
+                    {Math.round(((unitReportData.stats?.submittedCount || 0) / (unitReportData.stats?.totalUnits || units.length || 203)) * 100)}% hoàn thành
                   </p>
                 </div>
                 <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/30 shadow-sm">
@@ -1375,13 +1375,13 @@ export default function AdminTrainingDemandPage() {
                 </div>
               </div>
 
-              {/* Bảng tổng hợp toàn bộ 155 đơn vị */}
+              {/* Bảng tổng hợp toàn bộ đơn vị */}
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div>
                     <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
                       <Building2 className="w-4 h-4 text-emerald-600" />
-                      <span>Danh Sách & Tiến Độ Kê Khai Toàn Mạng Lưới (155 Đơn Vị)</span>
+                      <span>Danh Sách & Tiến Độ Kê Khai Toàn Mạng Lưới ({unitReportData.stats?.totalUnits || units.length || 203} Đơn Vị)</span>
                     </h4>
                     <p className="text-xs text-slate-500 mt-0.5">
                       Tổng số lượt người đăng ký đào tạo: <strong className="text-emerald-700 font-bold">{unitReportData.stats?.totalRegistrations?.toLocaleString('vi-VN') || 0} lượt</strong>
@@ -1585,14 +1585,14 @@ export default function AdminTrainingDemandPage() {
                       className="inline-flex items-center gap-2 text-xs md:text-sm font-bold text-emerald-800 hover:text-emerald-950 bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-xl border border-emerald-200 transition-colors shadow-xs"
                     >
                       <ArrowLeft className="w-4 h-4" />
-                      <span>Quay lại xem Toàn bộ {units.length || 155} Đơn vị</span>
+                      <span>Quay lại xem Toàn bộ {units.length || 203} Đơn vị</span>
                     </button>
                     <a
                       href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
                       className="text-xs text-blue-600 hover:text-blue-800 hover:underline font-bold flex items-center gap-1.5 self-start sm:self-auto"
                     >
                       <Download className="w-4 h-4 text-blue-600" />
-                      <span>Xuất Excel Toàn Mạng Lưới (155 ĐV)</span>
+                      <span>Xuất Excel Toàn Mạng Lưới ({units.length || 203} ĐV)</span>
                     </a>
                   </div>
 
@@ -2604,17 +2604,17 @@ export default function AdminTrainingDemandPage() {
                 Theo Đơn vị (Toàn bộ / Đơn lẻ)
               </h3>
               <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-                Xuất toàn bộ nhu cầu đào tạo của toàn mạng lưới 155 đơn vị (gồm 2 Sheet: Tổng hợp & Chi tiết) hoặc một đơn vị cụ thể.
+                Xuất toàn bộ nhu cầu đào tạo của toàn mạng lưới ({units.length || 203} đơn vị gồm 2 Sheet: Tổng hợp & Chi tiết) hoặc một đơn vị cụ thể.
               </p>
             </div>
             <div className="flex flex-col gap-2">
               <a
                 href="/api/training-reports?type=EXPORT_EXCEL&exportFormat=BY_UNIT&unitId=ALL"
                 className="inline-flex items-center justify-center gap-1.5 bg-purple-700 hover:bg-purple-800 text-white py-2 px-3 rounded-lg text-xs font-bold transition-colors shadow-sm"
-                title="Tải toàn bộ dữ liệu 155 đơn vị gồm Sheet 1 Tổng hợp và Sheet 2 Chi tiết"
+                title="Tải toàn bộ dữ liệu gồm Sheet 1 Tổng hợp và Sheet 2 Chi tiết"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Tải Toàn Bộ 155 Đơn Vị</span>
+                <span>Tải Toàn Bộ {units.length || 203} Đơn Vị</span>
               </a>
               {selectedUnitId && selectedUnitId !== 'ALL' && (
                 <a

@@ -577,7 +577,7 @@ export async function GET(req: NextRequest) {
         });
 
         const wsSummary = xlsx.utils.json_to_sheet(summary155Rows);
-        xlsx.utils.book_append_sheet(wb, wsSummary, 'Tong_Hop_155_Don_Vi');
+        xlsx.utils.book_append_sheet(wb, wsSummary, 'Tong_Hop_Toan_Mang_Luoi');
 
         const wsDetail = xlsx.utils.json_to_sheet(allDeclaredRows);
         xlsx.utils.book_append_sheet(wb, wsDetail, 'Chi_Tiet_Tung_Don_Vi');
@@ -586,7 +586,7 @@ export async function GET(req: NextRequest) {
 
         return new NextResponse(buf, {
           headers: {
-            'Content-Disposition': 'attachment; filename="Nhu_Cau_Dao_Tao_Toan_Bo_155_Don_Vi.xlsx"',
+            'Content-Disposition': 'attachment; filename="Nhu_Cau_Dao_Tao_Toan_Mang_Luoi_Agribank.xlsx"',
             'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
           }
         });

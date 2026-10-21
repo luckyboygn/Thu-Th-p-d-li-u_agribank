@@ -47,8 +47,8 @@ export function cleanUnitName(name: string): string {
 export function matchUnitFromFilename(filename: string, allUnits: UnitInfo[]): UnitMatchResult {
   const normFile = normalizeText(filename);
 
-  // 1. Tìm các mã số 4 chữ số trong tên file (mã chi nhánh Agribank chuẩn 4 số)
-  const codeMatches = Array.from(filename.matchAll(/\b(\d{4})\b/g)).map(m => m[1]);
+  // 1. Tìm các mã số đơn vị trong tên file (4 đến 6 chữ số: chi nhánh 4 số, ban/trung tâm TSC 4-6 số)
+  const codeMatches = Array.from(filename.matchAll(/\b(\d{4,6})\b/g)).map(m => m[1]);
   let unitByCode: UnitInfo | null = null;
   let foundCode: string | null = null;
 

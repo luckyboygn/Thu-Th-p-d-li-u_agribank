@@ -81,10 +81,12 @@ async function syncDbFromCloud() {
       fs.renameSync(tempPath, localDbPath);
       console.log(`[Cloud Sync] ✅ Đã khôi phục thành công '${remoteKey}' từ Cloud vào: ${localDbPath}`);
 
-      // Kiểm tra và tự động vá catalog 818 chuyên đề nếu DB tải về từ Cloud bị thiếu metadata
+      // Kiểm tra và tự động vá catalog 818 chuyên đề và 48 đơn vị Ban TSC nếu DB tải về từ Cloud bị thiếu
       try {
         const { DatabaseSync } = require('node:sqlite');
         const db = new DatabaseSync(localDbPath);
+        let needsSyncToCloud = false;
+
         // Chạy migration schema
         const cols = db.prepare('PRAGMA table_info(training_program_topics)').all();
         const colNames = cols.map(c => c.name);
@@ -103,7 +105,7 @@ async function syncDbFromCloud() {
           }
         }
         
-        // Kiểm tra xem đã đủ metadata chưa
+        // 1. Kiểm tra xem đã đủ metadata 818 chuyên đề chưa
         const check = db.prepare("SELECT count(*) as cnt FROM training_program_topics WHERE position_code IS NOT NULL AND position_code != '' AND learning_path IS NOT NULL AND learning_path != ''").get();
         if (!check || check.cnt < 700) {
           console.log('[Cloud Sync] DB từ Cloud thiếu metadata chuyên đề. Đang tự động nạp từ master-topics-data.json...');
@@ -137,25 +139,68 @@ async function syncDbFromCloud() {
               }
             }
             console.log(`[Cloud Sync] ✅ Đã cập nhật ${countUpdated}/${masterTopics.length} chuyên đề chuẩn.`);
-            db.close();
-
-            // Đẩy lại file SQLite đã hoàn thiện lên Cloud Storage!
-            console.log(`[Cloud Sync] Đang đồng bộ bản hoàn thiện lên Cloud Storage...`);
-            const fileStream = fs.createReadStream(localDbPath);
-            await s3.send(new PutObjectCommand({
-              Bucket: bucketName,
-              Key: remoteKey,
-              Body: fileStream,
-            }));
-            console.log(`[Cloud Sync] ✅ Đã đồng bộ bản hoàn thiện lên Cloud Storage thành công!`);
-          } else {
-            db.close();
+            needsSyncToCloud = true;
           }
-        } else {
-          db.close();
+        }
+
+        // 2. Kiểm tra và bổ sung 48 đơn vị / Ban Trụ sở chính nếu thiếu
+        try {
+          const hoJsonPath = path.resolve(__dirname, '../src/lib/head-office-units.json');
+          if (fs.existsSync(hoJsonPath)) {
+            const hoUnits = JSON.parse(fs.readFileSync(hoJsonPath, 'utf8'));
+            const bcrypt = require('bcryptjs');
+            const pwdHash = bcrypt.hashSync('Unit@123456', 10);
+            
+            const existingUnits = db.prepare('SELECT id, unit_code FROM units').all();
+            const existingCodes = new Map();
+            existingUnits.forEach(u => existingCodes.set(u.unit_code, u.id));
+
+            const existingUsers = db.prepare('SELECT id, username FROM users').all();
+            const existingUsernames = new Set(existingUsers.map(u => u.username));
+
+            const insUnit = db.prepare('INSERT INTO units (unit_code, unit_name, status, user_account, unit_type, region) VALUES (?, ?, ?, ?, ?, ?)');
+            const insUser = db.prepare('INSERT INTO users (username, password_hash, full_name, role, unit_id, status, token_version, must_change_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+
+            let unitsAdded = 0;
+            for (const item of hoUnits) {
+              const username = `${item.code}_Admin`;
+              let unitId = existingCodes.get(item.code);
+              if (!unitId) {
+                const res = insUnit.run(item.code, item.name, 'ACTIVE', username, item.type, item.region);
+                unitId = Number(res.lastInsertRowid);
+                existingCodes.set(item.code, unitId);
+                unitsAdded++;
+              }
+              if (!existingUsernames.has(username)) {
+                insUser.run(username, pwdHash, item.name, 'UNIT_ADMIN', unitId, 'ACTIVE', 1, 0);
+                existingUsernames.add(username);
+                unitsAdded++;
+              }
+            }
+            if (unitsAdded > 0) {
+              console.log(`[Cloud Sync] ✅ Đã bổ sung ${unitsAdded} đơn vị/tài khoản Ban TSC vào CSDL.`);
+              needsSyncToCloud = true;
+            }
+          }
+        } catch (errUnit) {
+          console.warn('[Cloud Sync] Lỗi cập nhật đơn vị TSC:', errUnit.message);
+        }
+
+        db.close();
+
+        // Nếu có cập nhật dữ liệu, đẩy lại file SQLite hoàn thiện lên Cloud Storage
+        if (needsSyncToCloud) {
+          console.log(`[Cloud Sync] Đang đồng bộ bản hoàn thiện lên Cloud Storage...`);
+          const fileStream = fs.createReadStream(localDbPath);
+          await s3.send(new PutObjectCommand({
+            Bucket: bucketName,
+            Key: remoteKey,
+            Body: fileStream,
+          }));
+          console.log(`[Cloud Sync] ✅ Đã đồng bộ bản hoàn thiện lên Cloud Storage thành công!`);
         }
       } catch (err) {
-        console.warn('[Cloud Sync] Lỗi cập nhật master catalog:', err.message);
+        console.warn('[Cloud Sync] Lỗi cập nhật master catalog/units:', err.message);
       }
     } else {
       console.log(`[Cloud Sync] Chưa có file trên Cloud. Đang tải bản database.sqlite hiện tại lên Cloud làm bản gốc...`);

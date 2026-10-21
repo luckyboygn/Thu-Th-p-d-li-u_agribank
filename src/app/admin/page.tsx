@@ -514,7 +514,7 @@ function AdminDashboardContent() {
 
   const isViewer = currentUser?.role === 'VIEWER';
 
-  const totalUnits = summary?.totalUnits || unitList.length || 155;
+  const totalUnits = summary?.totalUnits || unitList.length || 203;
   const submittedCount = isTrainingOnly
     ? summary?.trainingSubmittedCount || 0
     : isCandidateOnly
@@ -581,7 +581,7 @@ function AdminDashboardContent() {
         </div>
       </div>
 
-      {/* 1.5 Cấu hình Nhiệm vụ đợt này giao cho 155 Đơn vị */}
+      {/* 1.5 Cấu hình Nhiệm vụ đợt này giao cho các Đơn vị */}
       <div className="bg-gradient-to-r from-emerald-50 via-teal-50/50 to-white rounded-2xl p-4 sm:p-5 border border-emerald-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="w-11 h-11 rounded-xl bg-[#005F3E] text-white flex items-center justify-center font-bold shadow-xs shrink-0">
@@ -590,14 +590,14 @@ function AdminDashboardContent() {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-black uppercase tracking-wider text-[#005F3E]">
-                CẤU HÌNH NHIỆM VỤ ĐỢT NÀY CHO 155 ĐƠN VỊ
+                CẤU HÌNH NHIỆM VỤ ĐỢT NÀY CHO CÁC ĐƠN VỊ ({totalUnits} ĐV)
               </span>
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white text-emerald-800 border border-emerald-300 shadow-2xs">
                 Màn hình &quot;Việc cần làm&quot;
               </span>
             </div>
             <p className="text-xs text-slate-600 mt-1">
-              Quyết định nội dung Dashboard mà 155 Chi nhánh nhìn thấy khi vào hệ thống:
+              Quyết định nội dung Dashboard mà các Đơn vị nhìn thấy khi vào hệ thống:
             </p>
           </div>
         </div>

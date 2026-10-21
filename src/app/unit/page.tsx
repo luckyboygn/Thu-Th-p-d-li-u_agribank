@@ -982,7 +982,7 @@ function UnitDashboardContent() {
                 </span>
               </div>
               <div className="mt-3">
-                <div className="text-2xl sm:text-3xl font-black text-slate-900">155</div>
+                <div className="text-2xl sm:text-3xl font-black text-slate-900">{adminSummary?.totalUnits || unitList.length || 203}</div>
                 <div className="text-xs text-slate-400 mt-0.5">Toàn mạng lưới Agribank</div>
               </div>
             </div>
@@ -1008,19 +1008,19 @@ function UnitDashboardContent() {
                     : activeTaskMode === 'CANDIDATE_EXAM'
                     ? adminSummary?.completedUnits || 0
                     : Math.max(adminSummary?.trainingSubmittedCount || 0, adminSummary?.completedUnits || 0)}
-                  <span className="text-xs font-normal text-slate-500 ml-1">/ 155 ĐV</span>
+                  <span className="text-xs font-normal text-slate-500 ml-1">/ {adminSummary?.totalUnits || unitList.length || 203} ĐV</span>
                 </div>
                 {/* Progress bar */}
                 <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
                   <div
                     className="bg-emerald-600 h-1.5 rounded-full"
                     style={{
-                      width: `${Math.round((((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100))}%`
+                      width: `${Math.round((((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / (adminSummary?.totalUnits || unitList.length || 203)) * 100))}%`
                     }}
                   ></div>
                 </div>
                 <div className="text-[11px] text-emerald-600 font-semibold mt-1">
-                  Đạt {Math.round((((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / 155) * 100))}% hoàn thành
+                  Đạt {Math.round((((activeTaskMode === 'TRAINING_DEMAND' ? (adminSummary?.trainingSubmittedCount || 0) : (adminSummary?.completedUnits || 0)) / (adminSummary?.totalUnits || unitList.length || 203)) * 100))}% hoàn thành
                 </div>
               </div>
             </div>
@@ -1042,8 +1042,8 @@ function UnitDashboardContent() {
               <div className="mt-3">
                 <div className="text-2xl sm:text-3xl font-black text-amber-700">
                   {activeTaskMode === 'TRAINING_DEMAND'
-                    ? 155 - (adminSummary?.trainingSubmittedCount || 0)
-                    : 155 - (adminSummary?.completedUnits || 0)}
+                    ? (adminSummary?.totalUnits || unitList.length || 203) - (adminSummary?.trainingSubmittedCount || 0)
+                    : (adminSummary?.totalUnits || unitList.length || 203) - (adminSummary?.completedUnits || 0)}
                   <span className="text-xs font-normal text-slate-500 ml-1">ĐV</span>
                 </div>
                 <div className="text-xs text-slate-400 mt-1">

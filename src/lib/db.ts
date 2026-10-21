@@ -162,6 +162,20 @@ export function getDatabase(): DatabaseSync {
     } catch (e: any) {
       console.warn('[DB Init] Không thể tự động kiểm tra catalog sync:', e.message);
     }
+
+    // Tự động kiểm tra và đồng bộ 48 đơn vị/Ban Trụ sở chính & tài khoản nếu bị thiếu (kể cả sau khi kéo DB từ Cloud)
+    try {
+      const { ensureHeadOfficeUnitsSynced } = require('./head-office-units-sync');
+      const added = ensureHeadOfficeUnitsSynced(dbInstance);
+      if (added) {
+        try {
+          const { triggerCloudSync } = require('./cloud-sync');
+          triggerCloudSync().catch(() => {});
+        } catch {}
+      }
+    } catch (e: any) {
+      console.warn('[DB Init] Không thể tự động kiểm tra head office units sync:', e.message);
+    }
   }
   return dbInstance;
 }

@@ -952,7 +952,7 @@ export default function BatchProxyUploadModal({
                                       <div className="p-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold space-y-0.5">
                                         <div className="flex items-center gap-1 font-bold text-amber-800">
                                           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                          <span>KHÔNG TÌM THẤY ĐƠN VỊ TRONG 155 CHI NHÁNH</span>
+                                          <span>KHÔNG TÌM THẤY ĐƠN VỊ TRONG HỆ THỐNG</span>
                                         </div>
                                         <p className="text-[10px] text-amber-800">
                                           {item.reasons.join('. ')}
