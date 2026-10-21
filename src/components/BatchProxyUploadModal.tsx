@@ -182,18 +182,46 @@ export default function BatchProxyUploadModal({
     }));
     setAnalyzedItems(initialItems);
 
+    // Phân chia nhóm an toàn: file lớn (> 1.5MB) gửi riêng 1 file để bảo vệ RAM máy chủ
+    const chunks: File[][] = [];
+    let currentChunk: File[] = [];
+    let currentChunkSize = 0;
+
+    for (const file of fileList) {
+      if (file.size > 1.5 * 1024 * 1024) {
+        if (currentChunk.length > 0) {
+          chunks.push(currentChunk);
+          currentChunk = [];
+          currentChunkSize = 0;
+        }
+        chunks.push([file]);
+      } else {
+        currentChunk.push(file);
+        currentChunkSize += file.size;
+        if (currentChunk.length >= 3 || currentChunkSize > 2 * 1024 * 1024) {
+          chunks.push(currentChunk);
+          currentChunk = [];
+          currentChunkSize = 0;
+        }
+      }
+    }
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk);
+    }
+
     try {
-      for (let i = 0; i < total; i += CHUNK_SIZE) {
-        const chunk = fileList.slice(i, i + CHUNK_SIZE);
-        const currentCount = Math.min(i + chunk.length, total);
-        const percent = Math.round((currentCount / total) * 100);
+      let processedCount = 0;
+      for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+        const chunk = chunks[cIdx];
+        processedCount += chunk.length;
+        const percent = Math.round((processedCount / total) * 100);
 
         setProgress({
-          current: currentCount,
+          current: processedCount,
           total,
           percent,
           stage: 'analyzing',
-          message: `Đang phân tích nhóm ${Math.floor(i / CHUNK_SIZE) + 1} (${currentCount}/${total} file: ${chunk.map(f => f.name).join(', ')})...`
+          message: `Đang phân tích nhóm ${cIdx + 1}/${chunks.length} (${processedCount}/${total} file: ${chunk.map(f => f.name).join(', ')})...`
         });
 
         const fd = new FormData();
@@ -208,9 +236,23 @@ export default function BatchProxyUploadModal({
             body: fd
           });
 
-          const data = await res.json();
           if (!res.ok) {
-            throw new Error(data.error || 'Lỗi khi phân tích nhóm file');
+            let errorMsg = `Lỗi máy chủ (${res.status} ${res.statusText})`;
+            try {
+              const errData = await res.json();
+              if (errData?.error) errorMsg = errData.error;
+            } catch {
+              const text = await res.text().catch(() => '');
+              if (text && text.length < 200) errorMsg = text;
+            }
+            throw new Error(errorMsg);
+          }
+
+          let data: any;
+          try {
+            data = await res.json();
+          } catch {
+            throw new Error('Máy chủ phản hồi không đúng định dạng JSON hoặc kết nối bị gián đoạn');
           }
 
           const analyzedList = data.results || data.analyzed || [];
@@ -261,13 +303,18 @@ export default function BatchProxyUploadModal({
           }));
         } catch (chunkErr: any) {
           console.error('Lỗi khi phân tích nhóm file:', chunkErr);
+          const rawMsg = chunkErr.message || '';
+          const friendlyMsg = (rawMsg.includes('Unexpected end of JSON') || rawMsg.includes('Failed to execute'))
+            ? 'Phản hồi từ máy chủ bị gián đoạn (có thể do dung lượng file lớn hoặc kết nối mạng). Hãy thử tải riêng file này.'
+            : (rawMsg || 'Lỗi khi gửi yêu cầu phân tích');
+
           setAnalyzedItems(prev => prev.map(existingItem => {
             if (chunk.some(f => f.name === existingItem.fileName)) {
               return {
                 ...existingItem,
                 matchStatus: 'INVALID_EXCEL',
-                parseError: chunkErr.message || 'Lỗi khi gửi yêu cầu phân tích',
-                reasons: ['Lỗi phân tích hoặc phản hồi từ máy chủ'],
+                parseError: friendlyMsg,
+                reasons: [friendlyMsg],
                 selected: false
               };
             }
@@ -399,9 +446,23 @@ export default function BatchProxyUploadModal({
             body: fd
           });
 
-          const data = await res.json();
           if (!res.ok) {
-            throw new Error(data.error || 'Có lỗi khi tiến hành nộp hộ nhóm file này');
+            let errorMsg = `Lỗi máy chủ (${res.status} ${res.statusText})`;
+            try {
+              const errData = await res.json();
+              if (errData?.error) errorMsg = errData.error;
+            } catch {
+              const text = await res.text().catch(() => '');
+              if (text && text.length < 200) errorMsg = text;
+            }
+            throw new Error(errorMsg);
+          }
+
+          let data: any;
+          try {
+            data = await res.json();
+          } catch {
+            throw new Error('Máy chủ phản hồi không đúng định dạng JSON hoặc kết nối bị gián đoạn');
           }
 
           const resList = data.results || [];
@@ -429,12 +490,17 @@ export default function BatchProxyUploadModal({
           }));
         } catch (chunkErr: any) {
           console.error('Lỗi nộp hộ nhóm:', chunkErr);
+          const rawMsg = chunkErr.message || '';
+          const friendlyMsg = (rawMsg.includes('Unexpected end of JSON') || rawMsg.includes('Failed to execute'))
+            ? 'Phản hồi từ máy chủ bị gián đoạn khi nộp nhóm này. Vui lòng thử nộp riêng từng file.'
+            : (rawMsg || 'Lỗi kết nối máy chủ');
+
           chunk.forEach(chunkItem => {
             totalFailed++;
             accumulatedResults.push({
               fileName: chunkItem.fileName,
               status: 'FAILED',
-              message: chunkErr.message || 'Lỗi kết nối máy chủ'
+              message: friendlyMsg
             });
             setAnalyzedItems(prev => prev.map(item => {
               if (item.id === chunkItem.id) {
@@ -442,7 +508,7 @@ export default function BatchProxyUploadModal({
                   ...item,
                   executionResult: {
                     status: 'FAILED',
-                    message: chunkErr.message || 'Lỗi kết nối máy chủ'
+                    message: friendlyMsg
                   }
                 };
               }

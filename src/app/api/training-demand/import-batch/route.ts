@@ -97,11 +97,11 @@ export async function POST(req: NextRequest) {
           let wb: xlsx.WorkBook;
           if (file.name.toLowerCase().endsWith('.csv')) {
             const text = await file.text();
-            wb = xlsx.read(text, { type: 'string', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false });
+            wb = xlsx.read(text, { type: 'string', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false, sheetRows: 2500 });
           } else {
             const ab = await file.arrayBuffer();
             const buf = Buffer.from(ab);
-            wb = xlsx.read(buf, { type: 'buffer', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false });
+            wb = xlsx.read(buf, { type: 'buffer', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false, sheetRows: 2500 });
           }
           parseRes = parseTrainingDemandExcel(wb, allOfficialPrograms, allOfficialTopics);
         } catch (err: any) {
@@ -252,11 +252,11 @@ export async function POST(req: NextRequest) {
           let wb: xlsx.WorkBook;
           if (file.name.toLowerCase().endsWith('.csv')) {
             const text = await file.text();
-            wb = xlsx.read(text, { type: 'string', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false });
+            wb = xlsx.read(text, { type: 'string', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false, sheetRows: 2500 });
           } else {
             const ab = await file.arrayBuffer();
             const buf = Buffer.from(ab);
-            wb = xlsx.read(buf, { type: 'buffer', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false });
+            wb = xlsx.read(buf, { type: 'buffer', cellFormula: false, cellHTML: false, cellStyles: false, sheetStubs: false, sheetRows: 2500 });
           }
           parseRes = parseTrainingDemandExcel(wb, allOfficialPrograms, allOfficialTopics);
         } catch (err: any) {

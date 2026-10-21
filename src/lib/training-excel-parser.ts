@@ -111,14 +111,18 @@ export function parseTrainingDemandExcel(
     }
 
     // Tự động giải phóng các ô gộp (merged cells) để dữ liệu không bị khuyết thiếu trên từng dòng
-    // Tối ưu: Gán trực tiếp tham chiếu originCell (không shallow copy) và giới hạn cột <= 15 để tiết kiệm RAM & CPU
+    // Tối ưu: Gán trực tiếp tham chiếu originCell, giới hạn phạm vi an toàn để tránh OOM bộ nhớ khi người dùng merge cả triệu dòng
     if (ws['!merges']) {
+      const range = ws['!ref'] ? xlsx.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 2500, c: 20 } };
+      const maxR = Math.min(range.e.r, 2500);
       for (const m of ws['!merges']) {
+        if (m.s.r > maxR) continue;
+        if (m.e.r - m.s.r > 200) continue; // Bỏ qua merge bất thường bao trọn cả cột
+        const endR = Math.min(m.e.r, maxR);
         const originCell = ws[xlsx.utils.encode_cell(m.s)];
         if (!originCell || originCell.v === undefined || originCell.v === null || originCell.v === '') continue;
-        for (let r = m.s.r; r <= m.e.r; r++) {
-          for (let c = m.s.c; c <= m.e.c; c++) {
-            if (c > 15) continue; // Khung biểu mẫu khảo sát chỉ dùng tối đa 15 cột
+        for (let r = m.s.r; r <= endR; r++) {
+          for (let c = m.s.c; c <= Math.min(m.e.c, 15); c++) {
             const addr = xlsx.utils.encode_cell({ r, c });
             if (!ws[addr] || ws[addr].v === undefined || ws[addr].v === null || ws[addr].v === '') {
               ws[addr] = originCell;
@@ -128,9 +132,10 @@ export function parseTrainingDemandExcel(
       }
     }
 
-    // Nhận diện Sheet Đề xuất ngoài khung (Mẫu số 06 hoặc sheet đề xuất đặc thù)
+    // Nhận diện Sheet Đề xuất ngoài khung (Mẫu số 06 hoặc sheet đề xuất tự do)
     // Lưu ý: Không tính 'ngoai khung' đơn thuần vì Mẫu số 05 (Mau_05_Ngoai_Khung) là 26 chuyên đề chuẩn đã có trong CSDL
-    const isProposalSheet = normSheet.includes('de xuat') || normSheet.includes('mau 06') || normSheet.includes('mau_06') || normSheet.includes('proposal');
+    const isMau05 = normSheet.includes('mau 05') || normSheet.includes('mau_05');
+    const isProposalSheet = !isMau05 && (normSheet.includes('mau 06') || normSheet.includes('mau_06') || (normSheet.includes('de xuat') && !normSheet.includes('05')) || normSheet.includes('proposal'));
 
     if (isProposalSheet) {
       // Sheet Đề xuất ngoài khung (Mẫu số 06 dành cho TSC, VPĐD, ĐVSN hoặc đề xuất riêng của đơn vị)
@@ -204,29 +209,50 @@ export function parseTrainingDemandExcel(
         const rowStr = row.map(c => String(c || '').trim()).filter(Boolean).join(' ');
         if (!rowStr) continue;
 
-        // 1. Kiểm tra dòng Header của bảng (chứa 'Tên chuyên đề' hoặc 'Chuyên đề đào tạo')
+        // 1. Kiểm tra dòng Header của bảng (chứa 'Tên chuyên đề', 'Chuyên đề đào tạo' hoặc 'Tên chương trình' - Mẫu 05)
         const isHeaderRow = row.some(cell => {
           const nCell = normalizeText(String(cell));
-          return (nCell.includes('ten chuyen de') || nCell.includes('chuyen de dao tao')) && !nCell.includes('hoan thanh');
+          return (
+            nCell.includes('ten chuyen de') ||
+            nCell.includes('chuyen de dao tao') ||
+            nCell.includes('ten chuong trinh') ||
+            nCell.includes('chuong trinh dao tao') ||
+            nCell === 'chuyen de' ||
+            nCell === 'chuong trinh'
+          ) && !nCell.includes('hoan thanh');
         });
 
         if (isHeaderRow) {
           colMap = {};
           row.forEach((cell, idx) => {
             const nCell = normalizeText(String(cell));
-            if ((nCell.includes('ten chuyen de') || nCell === 'chuyen de' || nCell.includes('chuyen de dao tao')) && !nCell.includes('hoan thanh') && !nCell.includes('chung chi')) {
+            if (
+              (nCell.includes('ten chuyen de') ||
+               nCell === 'chuyen de' ||
+               nCell.includes('chuyen de dao tao') ||
+               nCell.includes('ten chuong trinh') ||
+               nCell === 'chuong trinh' ||
+               nCell.includes('chuong trinh dao tao')) &&
+              !nCell.includes('hoan thanh') &&
+              !nCell.includes('chung chi')
+            ) {
               colMap!.topicIdx = idx;
             } else if ((nCell.startsWith('vi tri') || nCell.includes('chuc danh')) && !nCell.includes('chung chi') && !nCell.includes('dao tao')) {
               colMap!.positionIdx = idx;
             } else if (nCell.includes('da hoc') && !nCell.includes('chuyen de')) {
               colMap!.completedIdx = idx;
-            } else if (nCell.includes('dang ky') && (nCell.includes('2027') || nCell.includes('so luong') || nCell === 'sl' || nCell.includes('hoc vien')) && !nCell.includes('ho ten') && !nCell.includes('danh sach')) {
+            } else if (
+              (nCell.includes('dang ky') || nCell.includes('so luong') || nCell === 'sl' || nCell.includes('hoc vien')) &&
+              !nCell.includes('ho ten') &&
+              !nCell.includes('danh sach') &&
+              !nCell.includes('da hoc')
+            ) {
               colMap!.countIdx = idx;
             } else if (nCell.includes('ho ten') || nCell.includes('danh sach')) {
               colMap!.namesIdx = idx;
-            } else if (nCell.includes('ma khung') || nCell.includes('chuong trinh')) {
+            } else if (nCell.includes('ma khung') || (nCell.includes('chuong trinh') && colMap!.topicIdx !== idx)) {
               colMap!.progIdx = idx;
-            } else if (nCell.includes('ghi chu')) {
+            } else if (nCell.includes('ghi chu') || nCell.includes('ly do') || nCell.includes('co so')) {
               colMap!.notesIdx = idx;
             } else if (nCell.includes('doi tuong')) {
               colMap!.audienceIdx = idx;
@@ -246,7 +272,7 @@ export function parseTrainingDemandExcel(
           continue;
         }
 
-        // 2. Kiểm tra dòng Tiêu đề Khung chương trình / Phụ lục (Chỉ áp dụng khi không phải dòng dữ liệu có STT dạng số)
+        // 2. Kiểm tra dòng Tiêu đề Khung chương trình / Phụ lục / Nhóm chương trình La Mã (Mẫu số 05)
         const cell0 = String(row[0] || '').trim();
         const cell1 = String(row[1] || '').trim();
         const isNumericStt = !isNaN(Number(cell0)) && Number(cell0) > 0;
@@ -254,36 +280,38 @@ export function parseTrainingDemandExcel(
         if (!isNumericStt) {
           const firstCells = row.slice(0, 3).map(c => String(c || '').trim()).join(' ');
           const upperFirst = firstCells.toUpperCase();
-          if (
-            upperFirst.startsWith('PHỤ LỤC') ||
-            upperFirst.startsWith('PHU LUC') ||
-            upperFirst.startsWith('KHUNG CHƯƠNG TRÌNH') ||
-            upperFirst.startsWith('KHUNG CHUONG TRINH') ||
-            cell0.toUpperCase().startsWith('PHỤ LỤC') ||
-            cell1.toUpperCase().startsWith('PHỤ LỤC')
-          ) {
-            // Ưu tiên khớp chính xác mã Phụ lục: PHỤ LỤC I.1, PHỤ LỤC III.1, etc.
-            const plMatch = firstCells.match(/PHỤ LỤC\s+([IVXLCDM]+)\.(\d+)/i) || firstCells.match(/PHU LUC\s+([IVXLCDM]+)\.(\d+)/i);
-            let matchedProg: any = null;
-            if (plMatch) {
-              const plCode = `PL_${plMatch[1]}.${plMatch[2]}`;
-              matchedProg = allOfficialPrograms!.find(p => p.code === plCode || normalizeText(p.code) === normalizeText(plCode));
-            }
+          const normFirst = normalizeText(firstCells);
 
-            if (!matchedProg) {
-              const normFirst = normalizeText(firstCells);
+          let matchedProg: any = null;
+
+          // 2.1 Ưu tiên khớp chính xác mã Phụ lục: PHỤ LỤC I.1, PHỤ LỤC III.1, etc.
+          const plMatch = firstCells.match(/PHỤ LỤC\s+([IVXLCDM]+)\.(\d+)/i) || firstCells.match(/PHU LUC\s+([IVXLCDM]+)\.(\d+)/i);
+          if (plMatch) {
+            const plCode = `PL_${plMatch[1]}.${plMatch[2]}`;
+            matchedProg = allOfficialPrograms!.find(p => p.code === plCode || normalizeText(p.code) === normalizeText(plCode));
+          }
+
+          // 2.2 Nhận diện các nhóm La Mã Mẫu số 05 (I., II., III., IV., V., VI.) hoặc tiêu đề chương trình
+          if (!matchedProg) {
+            const isRomanHeader = /^[IVXLCDM]+\.\s+/i.test(firstCells) || upperFirst.startsWith('PHỤ LỤC') || upperFirst.startsWith('KHUNG CHƯƠNG TRÌNH') || cell0.toUpperCase().startsWith('PHỤ LỤC');
+            if (isRomanHeader || upperFirst.includes('CHƯƠNG TRÌNH')) {
               matchedProg = allOfficialPrograms!.find(p => {
                 const normPCode = normalizeText(p.code);
                 const normPName = normalizeText(p.name);
-                return normFirst.includes(normPCode) || normFirst.includes(normPName) || (normPCode && normFirst.includes(normPCode.replace(/[^a-z0-9]/g, '')));
+                return (
+                  normFirst.includes(normPCode) ||
+                  normFirst.includes(normPName) ||
+                  normPName.includes(normFirst) ||
+                  (normPCode && normFirst.includes(normPCode.replace(/[^a-z0-9]/g, '')))
+                );
               });
             }
+          }
 
-            if (matchedProg) {
-              currentProgramId = matchedProg.id;
-              colMap = null; // Reset header mapping cho block mới
-              continue;
-            }
+          if (matchedProg) {
+            currentProgramId = matchedProg.id;
+            // Không xóa colMap nếu Mẫu số 05 dùng 1 header chung ở đầu bảng
+            continue;
           }
         }
 
