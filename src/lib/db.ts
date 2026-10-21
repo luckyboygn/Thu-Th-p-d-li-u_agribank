@@ -57,7 +57,7 @@ function runSchemaMigrations(db: DatabaseSync): void {
   addColumnIfNotExists(db, 'training_demand_program_topics', 'notes', 'TEXT');
   addColumnIfNotExists(db, 'training_demand_program_topics', 'completed_count', 'INTEGER DEFAULT 0');
 
-  // 4. Bảng training_program_topics (các trường mô tả chi tiết từ Mẫu chuẩn)
+  // 4. Bảng training_program_topics (các trường mô tả chi tiết từ Mẫu chuẩn Mẫu 04 & Mẫu 05)
   const topicColumns: Record<string, string> = {
     position_code: 'TEXT',
     learning_path: 'TEXT',
@@ -66,11 +66,19 @@ function runSchemaMigrations(db: DatabaseSync): void {
     cert_planning_higher: 'TEXT',
     cert_appoint_higher: 'TEXT',
     cert_reappoint: 'TEXT',
-    target_audience: 'TEXT'
+    target_audience: 'TEXT',
+    expected_content: 'TEXT',
+    instructor: 'TEXT',
+    target_goal: 'TEXT',
+    proposal_basis: 'TEXT'
   };
   for (const [col, type] of Object.entries(topicColumns)) {
     addColumnIfNotExists(db, 'training_program_topics', col, type);
   }
+
+  // 4b. Bảng training_demand_proposals (các trường theo Mẫu số 06: hình thức đào tạo, nguồn giảng viên/câu hỏi)
+  addColumnIfNotExists(db, 'training_demand_proposals', 'delivery_method', 'TEXT');
+  addColumnIfNotExists(db, 'training_demand_proposals', 'faculty_source', 'TEXT');
 
   // 5. Bảng training_programs (category_type)
   addColumnIfNotExists(db, 'training_programs', 'category_type', "VARCHAR(50) DEFAULT 'TRONG_KHUNG'");

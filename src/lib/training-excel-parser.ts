@@ -19,6 +19,8 @@ export interface ParsedProposal {
   target_audience?: string;
   expected_duration?: string;
   participant_count: number;
+  delivery_method?: string;
+  faculty_source?: string;
   notes?: string;
 }
 
@@ -126,28 +128,36 @@ export function parseTrainingDemandExcel(
       }
     }
 
-    const isProposalSheet = normSheet.includes('de xuat') || normSheet.includes('ngoai khung') || normSheet.includes('proposal');
+    // Nhận diện Sheet Đề xuất ngoài khung (Mẫu số 06 hoặc sheet đề xuất đặc thù)
+    // Lưu ý: Không tính 'ngoai khung' đơn thuần vì Mẫu số 05 (Mau_05_Ngoai_Khung) là 26 chuyên đề chuẩn đã có trong CSDL
+    const isProposalSheet = normSheet.includes('de xuat') || normSheet.includes('mau 06') || normSheet.includes('mau_06') || normSheet.includes('proposal');
 
     if (isProposalSheet) {
-      // Sheet Đề xuất ngoài khung
+      // Sheet Đề xuất ngoài khung (Mẫu số 06 dành cho TSC, VPĐD, ĐVSN hoặc đề xuất riêng của đơn vị)
       const rows: any[] = xlsx.utils.sheet_to_json(ws, { defval: '' });
       for (const row of rows) {
         totalRowsProcessed++;
         let propName = '';
         let audience = '';
         let duration = '';
+        let deliveryMethod = '';
+        let facultySource = '';
         let count = 0;
         let note = '';
 
         for (const key of Object.keys(row)) {
           const normKey = normalizeText(key);
           const val = row[key];
-          if (normKey.includes('ten chuyen de') || normKey.includes('khoa hoc') || normKey.includes('de xuat')) {
+          if (normKey.includes('ten chuyen de') || normKey.includes('khoa hoc') || normKey.includes('de xuat') || normKey.includes('chuong trinh')) {
             propName = String(val).trim();
           } else if (normKey.includes('doi tuong') || normKey.includes('hoc vien')) {
             audience = String(val).trim();
           } else if (normKey.includes('thoi luong')) {
             duration = String(val).trim();
+          } else if (normKey.includes('hinh thuc')) {
+            deliveryMethod = String(val).trim();
+          } else if (normKey.includes('giang vien') || normKey.includes('nguon') || normKey.includes('cau hoi')) {
+            facultySource = String(val).trim();
           } else if (normKey.includes('so luong') || normKey.includes('dang ky') || normKey.includes('nguoi')) {
             const cNum = parseInt(String(val).replace(/[^0-9]/g, ''));
             if (!isNaN(cNum) && cNum > 0) count = cNum;
@@ -156,12 +166,14 @@ export function parseTrainingDemandExcel(
           }
         }
 
-        if (propName && count > 0) {
+        if (propName && (count > 0 || duration || audience)) {
           proposalsList.push({
             proposal_name: propName,
             target_audience: audience,
             expected_duration: duration,
-            participant_count: count,
+            delivery_method: deliveryMethod,
+            faculty_source: facultySource,
+            participant_count: count > 0 ? count : 1,
             notes: note
           });
         }

@@ -125,7 +125,8 @@ export async function GET(req: NextRequest) {
            COALESCE(dt.completed_count, 0) as completed_count,
            t.topic_name, t.position_code, t.target_audience, t.delivery_method, t.duration,
            t.learning_path, t.competency, t.certificate_requirement,
-           t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint, t.display_order
+           t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint, t.display_order,
+           t.expected_content, t.instructor, t.target_goal, t.proposal_basis
     FROM training_demand_program_topics dt
     JOIN training_program_topics t ON dt.program_topic_id = t.id
     WHERE dt.demand_program_id = ?
@@ -613,8 +614,8 @@ export async function POST(req: NextRequest) {
 
         const insertStmt = db.prepare(`
           INSERT INTO training_demand_proposals (
-            submission_id, proposal_name, target_audience, participant_count, expected_duration, notes
-          ) VALUES (?, ?, ?, ?, ?, ?)
+            submission_id, proposal_name, target_audience, participant_count, expected_duration, delivery_method, faculty_source, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const p of proposals) {
@@ -625,6 +626,8 @@ export async function POST(req: NextRequest) {
               p.target_audience ? p.target_audience.trim() : null,
               Math.max(1, parseInt(p.participant_count) || 1),
               p.expected_duration ? p.expected_duration.trim() : null,
+              p.delivery_method ? p.delivery_method.trim() : null,
+              p.faculty_source ? p.faculty_source.trim() : null,
               p.notes ? p.notes.trim() : null
             );
           }

@@ -51,6 +51,10 @@ interface ProgramTopic {
   display_order: number;
   participant_count: number;
   completed_count?: number;
+  expected_content?: string;
+  instructor?: string;
+  target_goal?: string;
+  proposal_basis?: string;
 }
 
 interface DeclaredProgram {
@@ -82,6 +86,10 @@ interface DeclaredProgram {
     cert_appoint_higher?: string;
     cert_reappoint?: string;
     display_order: number;
+    expected_content?: string;
+    instructor?: string;
+    target_goal?: string;
+    proposal_basis?: string;
   }>;
 }
 
@@ -92,6 +100,8 @@ interface TrainingProposal {
   target_audience?: string;
   participant_count: number;
   expected_duration?: string;
+  delivery_method?: string;
+  faculty_source?: string;
   notes?: string;
 }
 
@@ -601,7 +611,7 @@ function UnitTrainingDemandContent() {
     }
   };
 
-  // 9b. Quản lý Đề xuất ngoài khung (Mục 2.8)
+  // 9b. Quản lý Đề xuất ngoài khung (Mẫu số 06 dành cho TSC, VPĐD, ĐVSN & Đề xuất đặc thù)
   const handleAddProposalRow = () => {
     setProposals(prev => [
       ...prev,
@@ -610,6 +620,8 @@ function UnitTrainingDemandContent() {
         target_audience: '',
         participant_count: 1,
         expected_duration: '',
+        delivery_method: '',
+        faculty_source: '',
         notes: ''
       }
     ]);
@@ -1331,20 +1343,20 @@ function UnitTrainingDemandContent() {
           )}
 
           {/* ========================================================================= */}
-          {/* ĐỀ XUẤT NHU CẦU NGOÀI KHUNG CHƯƠNG TRÌNH (MỤC 2.8) */}
+          {/* MẪU SỐ 06: KẾ HOẠCH ĐÀO TẠO, THI ĐỀ XUẤT TRIỂN KHAI CHO CÁC ĐƠN VỊ (TSC, VPĐD, ĐVSN) */}
           {/* ========================================================================= */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-amber-500" />
-                  <span>Đề xuất nhu cầu ngoài khung chương trình đào tạo</span>
+                  <span>Mẫu số 06: Kế hoạch đào tạo, thi đề xuất triển khai cho các đơn vị trong hệ thống năm 2027</span>
                   <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-200">
-                    Mục 2.8
+                    Mẫu số 06
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Đơn vị chủ động đề xuất các chuyên đề/nghiệp vụ đào tạo đặc thù chưa có trong danh mục 26 Khung chuẩn của Agribank.
+                  Dành cho các đơn vị tại Trụ sở chính, Đơn vị sự nghiệp, Văn phòng Đại diện chủ động đề xuất tổ chức các chương trình đào tạo, tập huấn, hội thảo, thi, hội thi... ngoài Khung cho người lao động toàn hệ thống Agribank.
                 </p>
               </div>
 
@@ -1356,7 +1368,7 @@ function UnitTrainingDemandContent() {
                     className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <PlusCircle className="w-4 h-4 text-emerald-700" />
-                    <span>Thêm đề xuất</span>
+                    <span>Thêm đề xuất (Mẫu 06)</span>
                   </button>
                   {proposals.length > 0 && (
                     <button
@@ -1366,7 +1378,7 @@ function UnitTrainingDemandContent() {
                       className="px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Save className="w-4 h-4" />
-                      <span>{savingProposals ? 'Đang lưu...' : 'Lưu danh sách đề xuất'}</span>
+                      <span>{savingProposals ? 'Đang lưu...' : 'Lưu danh sách đề xuất Mẫu 06'}</span>
                     </button>
                   )}
                 </div>
@@ -1376,7 +1388,7 @@ function UnitTrainingDemandContent() {
             {proposals.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300">
                 <p className="text-xs text-slate-500">
-                  Chưa có đề xuất đào tạo ngoài khung nào. {!isReadOnly && 'Nhấn nút "Thêm đề xuất" nếu đơn vị có nhu cầu đào tạo đặc thù.'}
+                  Chưa có đề xuất theo Mẫu số 06 nào. {!isReadOnly && 'Nhấn nút "Thêm đề xuất (Mẫu 06)" nếu đơn vị TSC/VPĐD/ĐVSN có chương trình đào tạo/hội thảo/thi đề xuất triển khai toàn hệ thống.'}
                 </p>
               </div>
             ) : (
@@ -1384,12 +1396,14 @@ function UnitTrainingDemandContent() {
                 <table className="w-full text-left text-xs border border-slate-200 rounded-xl overflow-hidden">
                   <thead className="bg-[#F8F9FA] text-slate-700 font-bold uppercase text-[11px] border-b border-slate-200">
                     <tr>
-                      <th className="px-3 py-3 w-10 text-center">STT</th>
-                      <th className="px-4 py-3 min-w-[220px]">Tên đề xuất chuyên đề / khóa học (*)</th>
-                      <th className="px-4 py-3 min-w-[180px]">Đối tượng tham gia</th>
-                      <th className="px-3 py-3 w-28 text-right">Số người dự kiến</th>
-                      <th className="px-3 py-3 w-28 text-center">Thời lượng</th>
-                      <th className="px-4 py-3 min-w-[200px]">Ghi chú / Đề xuất chi tiết</th>
+                      <th className="px-3 py-3 w-10 text-center">TT</th>
+                      <th className="px-4 py-3 min-w-[220px]">Chương trình đào tạo/hội thảo/thi (kèm Nội dung đề xuất) (*)</th>
+                      <th className="px-4 py-3 min-w-[160px]">Đối tượng</th>
+                      <th className="px-3 py-3 w-24 text-right">Số lượng (*)</th>
+                      <th className="px-3 py-3 w-24 text-center">Thời lượng (ngày/giờ)</th>
+                      <th className="px-3 py-3 w-28 text-center">Hình thức đào tạo</th>
+                      <th className="px-4 py-3 min-w-[180px]">Nguồn giảng viên / nguồn câu hỏi</th>
+                      <th className="px-4 py-3 min-w-[180px]">Ghi chú / Kiến nghị chi tiết</th>
                       {!isReadOnly && <th className="px-3 py-3 w-14 text-center">Xóa</th>}
                     </tr>
                   </thead>
@@ -1405,7 +1419,7 @@ function UnitTrainingDemandContent() {
                               type="text"
                               value={p.proposal_name}
                               onChange={(e) => handleProposalChange(idx, 'proposal_name', e.target.value)}
-                              placeholder="Ví dụ: Phân tích báo cáo tài chính IFRS..."
+                              placeholder="Ví dụ: Hội thảo kỹ năng quản trị trải nghiệm khách hàng số..."
                               className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                           )}
@@ -1418,14 +1432,14 @@ function UnitTrainingDemandContent() {
                               type="text"
                               value={p.target_audience || ''}
                               onChange={(e) => handleProposalChange(idx, 'target_audience', e.target.value)}
-                              placeholder="Ví dụ: Cán bộ QHKH Doanh nghiệp"
+                              placeholder="Ví dụ: Giao dịch viên, Kiểm soát viên"
                               className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           {isReadOnly ? (
-                            <span className="font-bold text-emerald-800">{p.participant_count} người</span>
+                            <span className="font-bold text-emerald-800">{p.participant_count}</span>
                           ) : (
                             <input
                               type="number"
@@ -1444,8 +1458,34 @@ function UnitTrainingDemandContent() {
                               type="text"
                               value={p.expected_duration || ''}
                               onChange={(e) => handleProposalChange(idx, 'expected_duration', e.target.value)}
-                              placeholder="Ví dụ: 2 ngày"
+                              placeholder="Ví dụ: 2 ngày / 16 giờ"
                               className="w-24 px-2 py-1.5 border border-slate-300 rounded-lg text-xs text-center text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {isReadOnly ? (
+                            <span className="text-slate-700">{p.delivery_method || '—'}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={p.delivery_method || ''}
+                              onChange={(e) => handleProposalChange(idx, 'delivery_method', e.target.value)}
+                              placeholder="Ví dụ: Trực tiếp / Kết hợp"
+                              className="w-28 px-2 py-1.5 border border-slate-300 rounded-lg text-xs text-center text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {isReadOnly ? (
+                            <span className="text-slate-700">{p.faculty_source || '—'}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={p.faculty_source || ''}
+                              onChange={(e) => handleProposalChange(idx, 'faculty_source', e.target.value)}
+                              placeholder="Ví dụ: Giảng viên nội bộ / Chuyên gia ngoài..."
+                              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                           )}
                         </td>
@@ -1457,7 +1497,7 @@ function UnitTrainingDemandContent() {
                               type="text"
                               value={p.notes || ''}
                               onChange={(e) => handleProposalChange(idx, 'notes', e.target.value)}
-                              placeholder="Lý do, mục tiêu kỳ vọng..."
+                              placeholder="Lý do, phối hợp triển khai..."
                               className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                           )}
@@ -1938,56 +1978,121 @@ function UnitTrainingDemandContent() {
                     <div className="overflow-x-auto max-h-[460px]">
                       <table className="w-full text-left text-xs whitespace-nowrap">
                         <thead className="bg-slate-100 text-slate-700 uppercase font-bold sticky top-0 border-b border-slate-200 z-10 text-[10px] tracking-wider">
-                          <tr>
-                            <th className="px-2 py-2.5 w-10 text-center">STT</th>
-                            <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
-                              Vị trí<br />chức danh
-                            </th>
-                            <th className="px-3 py-2 min-w-[200px] whitespace-normal leading-tight">
-                              Tên chuyên đề
-                            </th>
-                            <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
-                              Hình thức<br />đào tạo
-                            </th>
-                            <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
-                              Thời<br />lượng
-                            </th>
-                            <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
-                              Lộ trình<br />đào tạo
-                            </th>
-                            <th className="px-2 py-2 w-14 text-center whitespace-normal leading-tight">
-                              Năng<br />lực
-                            </th>
-                            <th className="px-3 py-2 min-w-[160px] whitespace-normal leading-tight">
-                              Chứng chỉ /<br />Chuẩn đào tạo
-                            </th>
-                            <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
-                              Quy hoạch<br />VT cao hơn
-                            </th>
-                            <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
-                              Bổ nhiệm<br />VT cao hơn
-                            </th>
-                            <th className="px-1.5 py-2 w-14 max-w-[58px] text-center whitespace-normal leading-tight text-[9px]">
-                              Bổ nhiệm<br />lại
-                            </th>
-                            <th className="px-2 py-2 w-24 text-right bg-blue-100/80 text-blue-900 border-l border-blue-200 whitespace-normal leading-tight">
-                              <div className="flex flex-col items-end">
-                                <span>Đã học (*)</span>
-                                <span className="text-[9px] font-normal text-blue-700 lowercase">tự nhập SL</span>
-                              </div>
-                            </th>
-                            <th className="px-2 py-2 w-28 text-right bg-emerald-100/80 text-emerald-900 border-l border-emerald-200 whitespace-normal leading-tight">
-                              <div className="flex flex-col items-end">
-                                <span>Đăng ký học<br />năm 2027 (*)</span>
-                                <span className="text-[9px] font-normal text-emerald-700 lowercase">tự nhập SL</span>
-                              </div>
-                            </th>
-                          </tr>
+                          {selectedProgram?.category_type === 'NGOAI_KHUNG' ? (
+                            <tr>
+                              <th className="px-2 py-2.5 w-10 text-center">TT</th>
+                              <th className="px-3 py-2 min-w-[200px] whitespace-normal leading-tight">Tên chương trình</th>
+                              <th className="px-3 py-2 min-w-[180px] whitespace-normal leading-tight">Đối tượng</th>
+                              <th className="px-3 py-2 min-w-[240px] whitespace-normal leading-tight">Nội dung dự kiến</th>
+                              <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">Thời lượng</th>
+                              <th className="px-2 py-2 w-24 text-center whitespace-normal leading-tight">Hình thức</th>
+                              <th className="px-3 py-2 min-w-[160px] whitespace-normal leading-tight">Giảng viên</th>
+                              <th className="px-3 py-2 min-w-[200px] whitespace-normal leading-tight">Mục tiêu</th>
+                              <th className="px-3 py-2 min-w-[200px] whitespace-normal leading-tight">Cơ sở xây dựng (Lý do)</th>
+                              <th className="px-2 py-2 w-28 text-right bg-emerald-100/80 text-emerald-900 border-l border-emerald-200 whitespace-normal leading-tight">
+                                <div className="flex flex-col items-end">
+                                  <span>Đăng ký học<br />năm 2027 (*)</span>
+                                  <span className="text-[9px] font-normal text-emerald-700 lowercase">tự nhập SL</span>
+                                </div>
+                              </th>
+                            </tr>
+                          ) : (
+                            <tr>
+                              <th className="px-2 py-2.5 w-10 text-center">STT</th>
+                              <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
+                                Vị trí<br />chức danh
+                              </th>
+                              <th className="px-3 py-2 min-w-[200px] whitespace-normal leading-tight">
+                                Tên chuyên đề
+                              </th>
+                              <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
+                                Hình thức<br />đào tạo
+                              </th>
+                              <th className="px-2 py-2 w-16 text-center whitespace-normal leading-tight">
+                                Thời<br />lượng
+                              </th>
+                              <th className="px-2 py-2 w-20 text-center whitespace-normal leading-tight">
+                                Lộ trình<br />đào tạo
+                              </th>
+                              <th className="px-2 py-2 w-14 text-center whitespace-normal leading-tight">
+                                Năng<br />lực
+                              </th>
+                              <th className="px-3 py-2 min-w-[160px] whitespace-normal leading-tight">
+                                Chứng chỉ /<br />Chuẩn đào tạo
+                              </th>
+                              <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                                Quy hoạch<br />VT cao hơn
+                              </th>
+                              <th className="px-1.5 py-2 w-16 max-w-[68px] text-center whitespace-normal leading-tight text-[9px]">
+                                Bổ nhiệm<br />VT cao hơn
+                              </th>
+                              <th className="px-1.5 py-2 w-14 max-w-[58px] text-center whitespace-normal leading-tight text-[9px]">
+                                Bổ nhiệm<br />lại
+                              </th>
+                              <th className="px-2 py-2 w-24 text-right bg-blue-100/80 text-blue-900 border-l border-blue-200 whitespace-normal leading-tight">
+                                <div className="flex flex-col items-end">
+                                  <span>Đã học (*)</span>
+                                  <span className="text-[9px] font-normal text-blue-700 lowercase">tự nhập SL</span>
+                                </div>
+                              </th>
+                              <th className="px-2 py-2 w-28 text-right bg-emerald-100/80 text-emerald-900 border-l border-emerald-200 whitespace-normal leading-tight">
+                                <div className="flex flex-col items-end">
+                                  <span>Đăng ký học<br />năm 2027 (*)</span>
+                                  <span className="text-[9px] font-normal text-emerald-700 lowercase">tự nhập SL</span>
+                                </div>
+                              </th>
+                            </tr>
+                          )}
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {topics.map((t, idx) => {
                             const hasErr = !!topicErrors[t.id];
                             const hasCompErr = !!completedErrors[t.id];
+                            const isNgoaiKhung = selectedProgram?.category_type === 'NGOAI_KHUNG';
+
+                            if (isNgoaiKhung) {
+                              return (
+                                <tr
+                                  key={t.id}
+                                  className={`hover:bg-slate-50 transition-colors ${
+                                    hasErr ? 'bg-rose-50/50' : t.participant_count > 0 ? 'bg-emerald-50/20' : ''
+                                  }`}
+                                >
+                                  <td className="px-2 py-2 text-center text-slate-400 font-medium">{idx + 1}</td>
+                                  <td className="px-3 py-2 font-bold text-slate-900 whitespace-normal leading-snug text-xs">{t.topic_name}</td>
+                                  <td className="px-3 py-2 text-slate-700 whitespace-normal leading-snug text-[11px]">{t.target_audience || '—'}</td>
+                                  <td className="px-3 py-2 text-slate-600 whitespace-pre-line leading-relaxed text-[11px] max-w-xs">{t.expected_content || '—'}</td>
+                                  <td className="px-2 py-2 text-slate-700 font-medium text-center text-xs">{t.duration || '—'}</td>
+                                  <td className="px-2 py-2 text-slate-600 text-center text-xs">{t.delivery_method || '—'}</td>
+                                  <td className="px-3 py-2 text-slate-700 whitespace-normal leading-snug text-[11px]">{t.instructor || '—'}</td>
+                                  <td className="px-3 py-2 text-slate-600 whitespace-normal leading-snug text-[11px] max-w-xs">{t.target_goal || '—'}</td>
+                                  <td className="px-3 py-2 text-slate-600 whitespace-pre-line leading-snug text-[11px] max-w-xs">{t.proposal_basis || '—'}</td>
+                                  <td className="px-2 py-2 text-right bg-emerald-50/40 border-l border-emerald-100">
+                                    <div className="flex flex-col items-end">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        value={t.participant_count === 0 ? '' : t.participant_count}
+                                        placeholder="0"
+                                        onChange={e => handleTopicParticipantChange(t.id, e.target.value)}
+                                        className={`w-20 px-2 py-1.5 text-xs text-right font-bold rounded-lg border outline-none transition-all ${
+                                          hasErr
+                                            ? 'border-rose-500 bg-rose-50 text-rose-900 ring-2 ring-rose-200'
+                                            : (t.participant_count || 0) > 0
+                                            ? 'border-emerald-500 bg-emerald-50 text-emerald-900 focus:ring-2 focus:ring-emerald-500'
+                                            : 'border-slate-300 text-slate-800 focus:border-emerald-500'
+                                        }`}
+                                      />
+                                      {hasErr && (
+                                        <span className="text-[10px] text-rose-600 font-medium mt-0.5">{topicErrors[t.id]}</span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            }
+
                             return (
                               <tr
                                 key={t.id}

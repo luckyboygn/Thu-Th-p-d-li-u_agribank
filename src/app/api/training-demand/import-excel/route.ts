@@ -32,21 +32,35 @@ export async function GET(req: NextRequest) {
   if (action === 'TEMPLATE') {
     const db = getDatabase();
 
-    // Lấy toàn bộ danh mục Khung chương trình và chuyên đề chính thức với đầy đủ thông tin mô tả
-    const topics = db.prepare(`
+    // 1. Lấy toàn bộ 818 chuyên đề KHUNG CHỨC DANH (Phụ lục I, II, III, IV - Mẫu số 04)
+    const inFrameworkTopics = db.prepare(`
       SELECT p.code as program_code, p.name as program_name,
              t.position_code, t.topic_name, t.delivery_method, t.duration,
              t.learning_path, t.competency, t.certificate_requirement,
              t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint
       FROM training_program_topics t
       JOIN training_programs p ON t.program_id = p.id
+      WHERE p.code NOT LIKE 'PL_NK%'
+      ORDER BY p.id ASC, t.display_order ASC, t.id ASC
+    `).all() as any[];
+
+    // 2. Lấy toàn bộ 26 chương trình NGOÀI KHUNG BAN HÀNH (Mẫu số 05)
+    const outFrameworkTopics = db.prepare(`
+      SELECT p.code as program_code, p.name as program_name,
+             t.topic_name, t.target_audience, t.expected_content,
+             t.duration, t.delivery_method, t.instructor, t.target_goal, t.proposal_basis
+      FROM training_program_topics t
+      JOIN training_programs p ON t.program_id = p.id
+      WHERE p.code LIKE 'PL_NK%'
       ORDER BY p.id ASC, t.display_order ASC, t.id ASC
     `).all() as any[];
 
     const wb = xlsx.utils.book_new();
 
-    // Sheet 1: Nhu cầu đào tạo theo khung chuẩn Agribank (13 cột mô tả + 2 cột nhập liệu)
-    const dataSheet1 = topics.map((t, idx) => ({
+    // ==========================================
+    // SHEET 1: MẪU SỐ 04 - KHUNG CHƯƠNG TRÌNH ĐÀO TẠO THEO VỊ TRÍ CHỨC DANH (818 chuyên đề)
+    // ==========================================
+    const dataSheet1 = inFrameworkTopics.map((t, idx) => ({
       'STT': idx + 1,
       'Mã Khung CT': t.program_code,
       'Khung Chương Trình Đào Tạo': t.program_name,
@@ -67,55 +81,117 @@ export async function GET(req: NextRequest) {
     const ws1 = xlsx.utils.json_to_sheet(dataSheet1);
     ws1['!cols'] = [
       { wch: 6 },  // STT
-      { wch: 15 }, // Mã Khung CT
-      { wch: 45 }, // Khung Chương Trình Đào Tạo
-      { wch: 22 }, // Vị Trí Chức Danh
+      { wch: 14 }, // Mã Khung CT
+      { wch: 42 }, // Khung Chương Trình Đào Tạo
+      { wch: 20 }, // Vị Trí Chức Danh
       { wch: 55 }, // Tên Chuyên Đề Đào Tạo
-      { wch: 20 }, // Hình Thức Đào Tạo
-      { wch: 18 }, // Thời Lượng Đào Tạo
-      { wch: 20 }, // Lộ Trình Đào Tạo
-      { wch: 15 }, // Năng Lực
-      { wch: 40 }, // Chứng Chỉ/Chứng Nhận Đào Tạo
-      { wch: 18 }, // Chứng Chỉ Quy Hoạch
-      { wch: 18 }, // Chứng Chỉ Bổ Nhiệm
-      { wch: 18 }, // Chứng Chỉ Bổ Nhiệm Lại
-      { wch: 22 }, // Đã học (số lượng)
-      { wch: 30 }  // Đăng ký học năm 2027 (số lượng)
+      { wch: 18 }, // Hình Thức Đào Tạo
+      { wch: 16 }, // Thời Lượng Đào Tạo
+      { wch: 18 }, // Lộ Trình Đào Tạo
+      { wch: 14 }, // Năng Lực
+      { wch: 38 }, // Chứng Chỉ/Chứng Nhận Đào Tạo
+      { wch: 16 }, // Chứng Chỉ Quy Hoạch
+      { wch: 16 }, // Chứng Chỉ Bổ Nhiệm
+      { wch: 16 }, // Chứng Chỉ Bổ Nhiệm Lại
+      { wch: 20 }, // Đã học (số lượng)
+      { wch: 28 }  // Đăng ký học năm 2027 (số lượng)
     ];
-    xlsx.utils.book_append_sheet(wb, ws1, 'Nhu_Cau_Dao_Tao');
+    xlsx.utils.book_append_sheet(wb, ws1, 'Mau_04_Khung_Chuc_Danh');
 
-    // Sheet 2: Đề xuất ngoài khung
-    const dataSheet2 = [
-      {
-        'STT': 1,
-        'Tên Chuyên Đề / Khóa Học Đề Xuất': 'Ví dụ: Kỹ năng quản trị trải nghiệm khách hàng số',
-        'Đối Tượng Tham Gia': 'Giao dịch viên, Kiểm soát viên',
-        'Thời Lượng Dự Kiến': '2 ngày',
-        'Số Lượng Người Đăng Ký': 15,
-        'Ghi Chú / Kiến Nghị Chi Tiết': 'Đào tạo trực tiếp tại chi nhánh'
-      }
-    ];
+    // ==========================================
+    // SHEET 2: MẪU SỐ 05 - DANH MỤC CÁC CHƯƠNG TRÌNH ĐÀO TẠO NGOÀI KHUNG ĐỀ XUẤT NĂM 2027 (26 chương trình)
+    // ==========================================
+    const dataSheet2 = outFrameworkTopics.map((t, idx) => ({
+      'TT': idx + 1,
+      'Nhóm chương trình': t.program_name,
+      'Tên chương trình': t.topic_name,
+      'Đối tượng': t.target_audience || '',
+      'Nội dung dự kiến': t.expected_content || '',
+      'Thời lượng': t.duration || '',
+      'Hình thức': t.delivery_method || '',
+      'Giảng viên': t.instructor || '',
+      'Mục tiêu': t.target_goal || '',
+      'Cơ sở xây dựng (Lý do đề xuất)': t.proposal_basis || '',
+      'Đơn vị đăng ký nhu cầu (Số lượng)': ''
+    }));
+
     const ws2 = xlsx.utils.json_to_sheet(dataSheet2);
     ws2['!cols'] = [
+      { wch: 6 },  // TT
+      { wch: 35 }, // Nhóm chương trình
+      { wch: 45 }, // Tên chương trình
+      { wch: 38 }, // Đối tượng
+      { wch: 50 }, // Nội dung dự kiến
+      { wch: 14 }, // Thời lượng
+      { wch: 18 }, // Hình thức
+      { wch: 28 }, // Giảng viên
+      { wch: 45 }, // Mục tiêu
+      { wch: 40 }, // Cơ sở xây dựng
+      { wch: 30 }  // Đơn vị đăng ký nhu cầu (Số lượng)
+    ];
+    xlsx.utils.book_append_sheet(wb, ws2, 'Mau_05_Ngoai_Khung');
+
+    // ==========================================
+    // SHEET 3: MẪU SỐ 06 - KẾ HOẠCH ĐÀO TẠO, THI ĐỀ XUẤT TRIỂN KHAI CHO CÁC ĐƠN VỊ NĂM 2027 (TSC, VPĐD, ĐVSN)
+    // ==========================================
+    const dataSheet3 = [
+      {
+        'TT': 1,
+        'Chương trình đào tạo/hội thảo/thi (kèm theo Nội dung đề xuất)': 'Ví dụ: Hội thảo chia sẻ kỹ năng quản trị trải nghiệm khách hàng số',
+        'Đối tượng': 'Giao dịch viên, Kiểm soát viên, Cán bộ QHKH',
+        'Số lượng': 25,
+        'Thời lượng (ngày/giờ)': '2 ngày',
+        'Hình thức đào tạo': 'Kết hợp (Trực tiếp & Trực tuyến)',
+        'Nguồn giảng viên/nguồn câu hỏi': 'Chuyên gia ngoài kết hợp Giảng viên nội bộ Agribank',
+        'Ghi chú / Kiến nghị chi tiết': 'Đề xuất phối hợp tổ chức tập trung cho các đơn vị khu vực'
+      },
+      {
+        'TT': 2,
+        'Chương trình đào tạo/hội thảo/thi (kèm theo Nội dung đề xuất)': '',
+        'Đối tượng': '',
+        'Số lượng': '',
+        'Thời lượng (ngày/giờ)': '',
+        'Hình thức đào tạo': '',
+        'Nguồn giảng viên/nguồn câu hỏi': '',
+        'Ghi chú / Kiến nghị chi tiết': ''
+      },
+      {
+        'TT': 3,
+        'Chương trình đào tạo/hội thảo/thi (kèm theo Nội dung đề xuất)': '',
+        'Đối tượng': '',
+        'Số lượng': '',
+        'Thời lượng (ngày/giờ)': '',
+        'Hình thức đào tạo': '',
+        'Nguồn giảng viên/nguồn câu hỏi': '',
+        'Ghi chú / Kiến nghị chi tiết': ''
+      }
+    ];
+
+    const ws3 = xlsx.utils.json_to_sheet(dataSheet3);
+    ws3['!cols'] = [
       { wch: 6 },
-      { wch: 45 },
+      { wch: 48 },
       { wch: 30 },
+      { wch: 14 },
       { wch: 20 },
-      { wch: 25 },
+      { wch: 24 },
+      { wch: 35 },
       { wch: 40 }
     ];
-    xlsx.utils.book_append_sheet(wb, ws2, 'De_Xuat_Ngoai_Khung');
+    xlsx.utils.book_append_sheet(wb, ws3, 'Mau_06_De_Xuat_TSC_VPDD');
 
-    // Sheet 3: Hướng dẫn
-    const dataSheet3 = [
-      { 'Mục': '1. Phạm vi', 'Nội dung': 'Biểu mẫu phục vụ khảo sát nhu cầu đào tạo toàn hệ thống Agribank năm 2027 dành cho các đơn vị.' },
-      { 'Mục': '2. Cách nhập Sheet 1 (Nhu_Cau_Dao_Tao)', 'Nội dung': 'Chỉ nhập số lượng vào 2 cột cuối: [Đã học (số lượng)] và [Đăng ký học năm 2027 (số lượng)] (nhập số nguyên >= 0). Các cột mô tả thông tin chuyên đề giữ nguyên không thay đổi.' },
-      { 'Mục': '3. Cách nhập Sheet 2 (De_Xuat_Ngoai_Khung)', 'Nội dung': 'Dành cho các chuyên đề đặc thù ngoài khung chương trình của Agribank. Điền tên chuyên đề, đối tượng và số lượng dự kiến.' },
-      { 'Mục': '4. Hỗ trợ', 'Nội dung': 'Nếu đơn vị không tự thao tác trên hệ thống, vui lòng gửi file Excel này về email Admin để được hỗ trợ tải lên.' }
+    // ==========================================
+    // SHEET 4: HƯỚNG DẪN KÊ KHAI
+    // ==========================================
+    const dataSheet4 = [
+      { 'Mục': '1. Mẫu số 04 (Mau_04_Khung_Chuc_Danh)', 'Nội dung': 'Gồm 818 chuyên đề Khung chương trình đào tạo theo vị trí chức danh (Phụ lục I đến IV). Các đơn vị CHỈ NHẬP VÀO 2 CỘT CUỐI: [Đã học (số lượng)] và [Đăng ký học năm 2027 (số lượng)]. Các cột thông tin mô tả chuyên đề giữ nguyên.' },
+      { 'Mục': '2. Mẫu số 05 (Mau_05_Ngoai_Khung)', 'Nội dung': 'Gồm 26 chương trình đào tạo ngoài khung đã được Agribank ban hành (gồm 6 nhóm từ I đến VI). Các đơn vị CHỈ NHẬP VÀO CỘT CUỐI: [Đơn vị đăng ký nhu cầu (Số lượng)] nếu có nhu cầu đào tạo.' },
+      { 'Mục': '3. Mẫu số 06 (Mau_06_De_Xuat_TSC_VPDD)', 'Nội dung': 'Dành riêng cho các đơn vị Trụ sở chính, Văn phòng Đại diện, Đơn vị sự nghiệp chủ động đề xuất các khóa đào tạo, hội thảo, thi, hội thi... mới do đơn vị mình tổ chức cho người lao động toàn hệ thống.' },
+      { 'Mục': '4. Hỗ trợ kỹ thuật', 'Nội dung': 'Sau khi điền số liệu, đơn vị có thể tải file trực tiếp lên App Web Khảo sát hoặc gửi file về Admin để được hỗ trợ nộp hộ.' }
     ];
-    const ws3 = xlsx.utils.json_to_sheet(dataSheet3);
-    ws3['!cols'] = [{ wch: 30 }, { wch: 80 }];
-    xlsx.utils.book_append_sheet(wb, ws3, 'Huong_Dan_Ke_Khai');
+    const ws4 = xlsx.utils.json_to_sheet(dataSheet4);
+    ws4['!cols'] = [{ wch: 35 }, { wch: 90 }];
+    xlsx.utils.book_append_sheet(wb, ws4, 'Huong_Dan_Ke_Khai');
 
     const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
 

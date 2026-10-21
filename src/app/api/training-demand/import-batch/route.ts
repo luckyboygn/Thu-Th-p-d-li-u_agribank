@@ -349,11 +349,11 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Thêm các đề xuất ngoài khung
+          // Thêm các đề xuất ngoài khung (Mẫu số 06)
           const insertProposalStmt = db.prepare(`
             INSERT INTO training_demand_proposals (
-              submission_id, proposal_name, target_audience, expected_duration, participant_count, notes
-            ) VALUES (?, ?, ?, ?, ?, ?)
+              submission_id, proposal_name, target_audience, expected_duration, delivery_method, faculty_source, participant_count, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `);
 
           for (const prop of parseRes.proposalsList) {
@@ -362,6 +362,8 @@ export async function POST(req: NextRequest) {
               prop.proposal_name,
               prop.target_audience || '',
               prop.expected_duration || '',
+              prop.delivery_method || '',
+              prop.faculty_source || '',
               prop.participant_count,
               prop.notes || sourceNote
             );
