@@ -12,35 +12,46 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const taskType = searchParams.get('taskType');
 
-  const db = getDatabase();
-  let query = `
-    SELECT id, code, title, description, status, start_date, end_date, start_at, end_at, created_at, task_type
-    FROM exams
-  `;
-  const params: any[] = [];
+  try {
+    const db = getDatabase();
+    let query = `
+      SELECT id, code, title, description, status, start_date, end_date, start_at, end_at, created_at, task_type
+      FROM exams
+    `;
+    const params: any[] = [];
 
-  if (taskType === 'CANDIDATE_EXAM') {
-    query += ` WHERE (task_type = 'CANDIDATE_EXAM' OR task_type IS NULL) 
-                AND LOWER(title) NOT LIKE '%khảo sát%' 
-                AND LOWER(title) NOT LIKE '%đào tạo%' 
-                AND LOWER(title) NOT LIKE '%nhu cầu%' 
-                AND LOWER(code) NOT LIKE 'ks%'`;
-  } else if (taskType === 'TRAINING_DEMAND') {
-    query += ` WHERE task_type = 'TRAINING_DEMAND' 
-                OR LOWER(title) LIKE '%khảo sát%' 
-                OR LOWER(title) LIKE '%đào tạo%' 
-                OR LOWER(title) LIKE '%nhu cầu%' 
-                OR LOWER(code) LIKE 'ks%'`;
-  } else if (taskType && taskType !== 'ALL') {
-    query += ` WHERE task_type = ?`;
-    params.push(taskType);
+    if (taskType === 'CANDIDATE_EXAM') {
+      query += ` WHERE (task_type = 'CANDIDATE_EXAM' OR task_type IS NULL) 
+                  AND LOWER(title) NOT LIKE '%khảo sát%' 
+                  AND LOWER(title) NOT LIKE '%đào tạo%' 
+                  AND LOWER(title) NOT LIKE '%nhu cầu%' 
+                  AND LOWER(code) NOT LIKE 'ks%'`;
+    } else if (taskType === 'TRAINING_DEMAND') {
+      query += ` WHERE task_type = 'TRAINING_DEMAND' 
+                  OR LOWER(title) LIKE '%khảo sát%' 
+                  OR LOWER(title) LIKE '%đào tạo%' 
+                  OR LOWER(title) LIKE '%nhu cầu%' 
+                  OR LOWER(code) LIKE 'ks%'`;
+    } else if (taskType && taskType !== 'ALL') {
+      query += ` WHERE task_type = ?`;
+      params.push(taskType);
+    }
+
+    query += ` ORDER BY id DESC`;
+
+    let exams = [];
+    try {
+      exams = db.prepare(query).all(...params);
+    } catch {
+      // Fallback nếu cột task_type đang trong quá trình migration
+      exams = db.prepare(`SELECT id, code, title, description, status, start_date, end_date, created_at FROM exams ORDER BY id DESC`).all();
+    }
+
+    return NextResponse.json({ exams });
+  } catch (err: any) {
+    console.error('[Exams GET Error]:', err);
+    return NextResponse.json({ error: err.message || 'Lỗi khi tải danh sách kỳ thi' }, { status: 500 });
   }
-
-  query += ` ORDER BY id DESC`;
-
-  const exams = db.prepare(query).all(...params);
-
-  return NextResponse.json({ exams });
 }
 
 export async function POST(req: NextRequest) {

@@ -188,6 +188,10 @@ function AdminDashboardContent() {
       const dashRes = await fetch(`/api/dashboard/admin?${queryParams.toString()}`, {
         cache: 'no-store'
       });
+      if (!dashRes.ok) {
+        console.error('Lỗi khi tải dữ liệu dashboard admin, status:', dashRes.status);
+        return;
+      }
       const dashData = await dashRes.json();
 
       setSummary(dashData.summary);
