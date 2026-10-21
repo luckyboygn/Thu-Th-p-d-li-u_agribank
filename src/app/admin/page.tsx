@@ -152,7 +152,21 @@ function AdminDashboardContent() {
       });
       if (res.ok) {
         setActiveCampaignTask(newTask);
-        await loadData(undefined, undefined, categoryFilter);
+        let targetExamId = selectedExamId;
+        if (newTask === 'TRAINING_DEMAND') {
+          const trainEx = exams.find(e => e.task_type === 'TRAINING_DEMAND' || e.code?.startsWith('KS') || e.title?.toLowerCase().includes('khảo sát'));
+          if (trainEx) {
+            targetExamId = trainEx.id;
+            setSelectedExamId(trainEx.id);
+          }
+        } else if (newTask === 'CANDIDATE_EXAM') {
+          const candEx = exams.find(e => e.task_type === 'CANDIDATE_EXAM' || (!e.title?.toLowerCase().includes('khảo sát') && !e.code?.startsWith('KS')));
+          if (candEx) {
+            targetExamId = candEx.id;
+            setSelectedExamId(candEx.id);
+          }
+        }
+        await loadData(targetExamId || undefined, undefined, categoryFilter);
       } else {
         const errJson = await res.json();
         alert(errJson.error || 'Lỗi khi cập nhật cấu hình nhiệm vụ');
@@ -328,15 +342,27 @@ function AdminDashboardContent() {
     return ex.task_type === 'TRAINING_DEMAND' || title.includes('khảo sát') || title.includes('đào tạo') || title.includes('nhu cầu') || code.startsWith('ks');
   }, [exams, selectedExamId]);
 
-  const isTrainingOnly =
-    categoryFilter === 'TRAINING_DEMAND' ||
-    (categoryFilter === 'ALL' && activeCampaignTask === 'TRAINING_DEMAND') ||
-    (categoryFilter === 'ALL' && (summary?.trainingSubmittedCount || 0) > 0 && (summary?.completedUnits || 0) === 0) ||
-    (categoryFilter === 'ALL' && activeCampaignTask !== 'CANDIDATE_EXAM' && isSelectedExamTraining);
+  const isTrainingOnly = useMemo(() => {
+    if (categoryFilter === 'TRAINING_DEMAND') return true;
+    if (categoryFilter === 'CANDIDATE_LIST') return false;
+    if (activeCampaignTask === 'TRAINING_DEMAND') return true;
+    if (activeCampaignTask === 'CANDIDATE_EXAM') return false;
+    if (activeCampaignTask === 'BOTH') return false;
+    // Chế độ AUTO hoặc mặc định
+    if (selectedExamId) return isSelectedExamTraining;
+    return (summary?.trainingSubmittedCount || 0) > 0 && (summary?.completedUnits || 0) === 0;
+  }, [categoryFilter, activeCampaignTask, selectedExamId, isSelectedExamTraining, summary]);
 
-  const isCandidateOnly =
-    categoryFilter === 'CANDIDATE_LIST' ||
-    (categoryFilter === 'ALL' && activeCampaignTask === 'CANDIDATE_EXAM' && (summary?.trainingSubmittedCount || 0) === 0);
+  const isCandidateOnly = useMemo(() => {
+    if (categoryFilter === 'CANDIDATE_LIST') return true;
+    if (categoryFilter === 'TRAINING_DEMAND') return false;
+    if (activeCampaignTask === 'CANDIDATE_EXAM') return true;
+    if (activeCampaignTask === 'TRAINING_DEMAND') return false;
+    if (activeCampaignTask === 'BOTH') return false;
+    // Chế độ AUTO hoặc mặc định
+    if (selectedExamId) return !isSelectedExamTraining;
+    return (summary?.completedUnits || 0) > 0;
+  }, [categoryFilter, activeCampaignTask, selectedExamId, isSelectedExamTraining, summary]);
 
   // Logic lọc dữ liệu đơn vị theo bộ lọc
   const filteredUnits = useMemo(() => {

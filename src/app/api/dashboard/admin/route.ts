@@ -194,11 +194,12 @@ export async function GET(req: NextRequest) {
 
       // Trạng thái tổng hợp dựa trên formFilter hoặc đợt đang chọn
       const isTrainingSelected = formFilterParam === 'TRAINING_DEMAND' ||
-        activeCampaignTask === 'TRAINING_DEMAND' ||
-        (formFilterParam !== 'CANDIDATE_LIST' && activeCampaignTask !== 'CANDIDATE_EXAM' && selectedExam && (selectedExam.task_type === 'TRAINING_DEMAND' || selectedExam.code?.startsWith('KS') || selectedExam.title?.toLowerCase().includes('khảo sát')));
+        (formFilterParam !== 'CANDIDATE_LIST' && activeCampaignTask === 'TRAINING_DEMAND') ||
+        (formFilterParam !== 'CANDIDATE_LIST' && activeCampaignTask !== 'CANDIDATE_EXAM' && activeCampaignTask !== 'BOTH' && selectedExam && (selectedExam.task_type === 'TRAINING_DEMAND' || selectedExam.code?.startsWith('KS') || selectedExam.title?.toLowerCase().includes('khảo sát')));
 
       const isCandidateSelected = formFilterParam === 'CANDIDATE_LIST' ||
-        (activeCampaignTask === 'CANDIDATE_EXAM' && formFilterParam !== 'TRAINING_DEMAND' && (trainingSubmittedCount === 0));
+        (formFilterParam !== 'TRAINING_DEMAND' && activeCampaignTask === 'CANDIDATE_EXAM') ||
+        (formFilterParam !== 'TRAINING_DEMAND' && activeCampaignTask !== 'TRAINING_DEMAND' && activeCampaignTask !== 'BOTH' && selectedExam && selectedExam.task_type === 'CANDIDATE_EXAM');
 
       let overallStatus: 'CHƯA_NỘP' | 'ĐÃ_NỘP' | 'CÓ_LỖI' | 'ĐANG_SOẠN' | 'MỞ_LẠI' = 'CHƯA_NỘP';
 
