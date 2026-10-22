@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import path from 'path';
-import fs from 'fs';
-const { createBackup } = require('../../../../scripts/backup_db.js');
+import { createDatabaseBackup, listDatabaseBackups } from '@/lib/backup';
 
-const BACKUP_DIR = path.join(process.cwd(), 'backups');
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // 1. GET: Lấy danh sách các bản sao lưu (Chỉ Super Admin)
 export async function GET(req: NextRequest) {
@@ -22,24 +21,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    if (!fs.existsSync(BACKUP_DIR)) {
-      fs.mkdirSync(BACKUP_DIR, { recursive: true });
-    }
-
-    const files = fs.readdirSync(BACKUP_DIR)
-      .filter(f => f.startsWith('database_') && f.endsWith('.sqlite'))
-      .map(f => {
-        const filePath = path.join(BACKUP_DIR, f);
-        const stats = fs.statSync(filePath);
-        return {
-          fileName: f,
-          sizeBytes: stats.size,
-          sizeMB: (stats.size / (1024 * 1024)).toFixed(2),
-          createdAt: stats.mtime.toISOString(),
-        };
-      })
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
+    const files = listDatabaseBackups();
     return NextResponse.json({
       backups: files,
       total: files.length
@@ -65,7 +47,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const backupResult = createBackup();
+    const backupResult = createDatabaseBackup();
 
     logAudit({
       userId: session.id,

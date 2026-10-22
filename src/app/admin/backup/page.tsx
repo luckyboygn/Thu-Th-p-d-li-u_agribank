@@ -24,14 +24,21 @@ export default function AdminBackupPage() {
     try {
       setLoading(true);
       const res = await fetch('/api/backup');
-      const data = await res.json();
+      let data: any = {};
+      try {
+        const text = await res.text();
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { error: `Máy chủ phản hồi mã ${res.status} (${res.statusText || 'Không có phản hồi JSON'})` };
+      }
+
       if (res.ok) {
         setBackups(data.backups || []);
       } else {
         setMessage({ type: 'error', text: data.error || 'Lỗi khi tải danh sách sao lưu.' });
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      setMessage({ type: 'error', text: err.message || 'Lỗi kết nối khi tải danh sách sao lưu.' });
     } finally {
       setLoading(false);
     }
@@ -46,13 +53,20 @@ export default function AdminBackupPage() {
     setMessage(null);
     try {
       const res = await fetch('/api/backup', { method: 'POST' });
-      const data = await res.json();
+      let data: any = {};
+      try {
+        const text = await res.text();
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { error: `Máy chủ phản hồi mã ${res.status} (${res.statusText || 'Không có phản hồi JSON'})` };
+      }
+
       if (!res.ok) throw new Error(data.error || 'Lỗi khi tạo bản sao lưu.');
 
       setMessage({ type: 'success', text: `Tạo bản sao lưu thành công: ${data.backup?.fileName} (${data.backup?.sizeMB} MB)` });
       await fetchBackups();
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      setMessage({ type: 'error', text: err.message || 'Lỗi kết nối khi tạo bản sao lưu.' });
     } finally {
       setCreating(false);
     }
