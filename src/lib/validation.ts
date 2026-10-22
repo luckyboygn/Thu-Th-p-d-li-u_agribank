@@ -19,6 +19,7 @@ export interface ValidationErrorItem {
     | 'INACTIVE_EMPLOYEE';
   errorMessage: string;
   severity?: 'ERROR' | 'WARNING';
+  sheetName?: string;
 }
 
 export interface ValidationRecordResult {
@@ -26,6 +27,7 @@ export interface ValidationRecordResult {
   employeeCode: string;
   elearningAccount: string;
   fullName: string;
+  sheetName?: string;
   rawData: Record<string, any>;
   status: 'VALID' | 'INVALID';
   errors: ValidationErrorItem[];
@@ -274,6 +276,7 @@ export function validateCandidateBatch(
       employeeCode: code,
       elearningAccount: elearn,
       fullName: r.fullName,
+      sheetName: r.sheetName,
       rawData: r.rawData,
       status: isRecordValid ? 'VALID' : 'INVALID',
       errors: rowErrors

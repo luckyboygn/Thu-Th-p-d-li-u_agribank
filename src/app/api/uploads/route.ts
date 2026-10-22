@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { detectHeaderAndMapping, parseSheetRecords, ColumnMapping } from '@/lib/excel';
+import { detectHeaderAndMapping, parseSheetRecords, unmergeSheetCells, ColumnMapping, ParseReport, ParsedRowData } from '@/lib/excel';
 import { validateCandidateBatch } from '@/lib/validation';
 import { isWindowOpen } from '@/lib/deadline';
 import * as xlsx from 'xlsx';
@@ -131,15 +131,25 @@ export async function POST(req: NextRequest) {
 
     // Đọc workbook bằng SheetJS
     const workbook = xlsx.read(buffer, { type: 'buffer' });
-    const sheetName = (formData.get('sheetName') as string) || workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    if (!worksheet) {
-      return NextResponse.json({ error: `Không tìm thấy sheet "${sheetName}".` }, { status: 400 });
+    const requestedSheet = (formData.get('sheetName') as string) || '';
+
+    // Sheet dùng để nhận diện và xem trước cấu trúc
+    let previewSheetName = requestedSheet && requestedSheet !== '__ALL__' && requestedSheet !== 'ALL'
+      ? requestedSheet
+      : workbook.SheetNames[0];
+
+    const previewWs = workbook.Sheets[previewSheetName];
+    if (!previewWs) {
+      return NextResponse.json({ error: `Không tìm thấy sheet "${previewSheetName}".` }, { status: 400 });
     }
 
-    const rawSheetData: any[][] = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    // Tự động tháo gỡ ô gộp (unmerge) trên worksheet xem trước để không bị khuyết ô
+    unmergeSheetCells(previewWs);
+
+    // raw: false để đảm bảo giữ nguyên định dạng chuỗi hiển thị (bảo toàn số 0 đầu, công thức, số khoa học)
+    const rawSheetData: any[][] = xlsx.utils.sheet_to_json(previewWs, { header: 1, defval: '', raw: false });
     if (rawSheetData.length === 0) {
-      return NextResponse.json({ error: 'Sheet dữ liệu không có nội dung.' }, { status: 400 });
+      return NextResponse.json({ error: `Sheet dữ liệu "${previewSheetName}" không có nội dung.` }, { status: 400 });
     }
 
     // Tự động nhận diện header và mapping
@@ -170,13 +180,24 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Khởi tạo báo cáo đọc file thử nghiệm (dry-run) cho preview
+      const previewParse = parseSheetRecords(rawSheetData, previewHeaderRow, detection.suggestedMapping, {
+        sheetName: previewSheetName
+      });
+
       return NextResponse.json({
         success: true,
         sheets: workbook.SheetNames,
-        selectedSheet: sheetName,
+        selectedSheet: previewSheetName,
         detectedHeaderRow: previewHeaderRow,
         headers: previewHeaders,
         suggestedMapping: detection.suggestedMapping,
+        candidateCodeCols: detection.candidateCodeCols,
+        candidateElearnCols: detection.candidateElearnCols,
+        candidateNameCols: detection.candidateNameCols,
+        isAmbiguous: detection.isAmbiguous,
+        ambiguityWarnings: detection.ambiguityWarnings,
+        parseReport: previewParse.parseReport,
         sampleRows: previewSampleRows,
         fileInfo: {
           name: file.name,
@@ -192,11 +213,21 @@ export async function POST(req: NextRequest) {
       headerRowIndex = parseInt(headerRowIdxStr);
     }
 
+    // Ưu tiên TUYỆT ĐỐI mapping mà người dùng đã xác nhận ở bước Preview
     let mapping: ColumnMapping = detection.suggestedMapping;
     if (customMappingStr) {
       try {
-        mapping = JSON.parse(customMappingStr);
-      } catch (e) {}
+        const parsedMap = JSON.parse(customMappingStr);
+        if (parsedMap && parsedMap.employeeCodeCol && parsedMap.elearningAccountCol) {
+          mapping = {
+            employeeCodeCol: String(parsedMap.employeeCodeCol).trim(),
+            elearningAccountCol: String(parsedMap.elearningAccountCol).trim(),
+            fullNameCol: parsedMap.fullNameCol ? String(parsedMap.fullNameCol).trim() : ''
+          };
+        }
+      } catch (e) {
+        return NextResponse.json({ error: 'Định dạng mapping người dùng gửi lên không hợp lệ.' }, { status: 400 });
+      }
     }
 
     if (!mapping.employeeCodeCol || !mapping.elearningAccountCol) {
@@ -206,9 +237,52 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Bóc tách toàn bộ dòng dữ liệu, bảo toàn 100% cột nghiệp vụ trong rawData
-    const parsedRows = parseSheetRecords(rawSheetData, headerRowIndex, mapping);
-    if (parsedRows.length === 0) {
+    // Xác định danh sách sheet cần đọc:
+    // Nếu người dùng chọn '__ALL__' hoặc 'ALL' -> đọc tất cả các sheet có dữ liệu
+    // Nếu chọn sheet cụ thể -> chỉ đọc sheet đó
+    const processAllSheets = requestedSheet === '__ALL__' || requestedSheet === 'ALL';
+    const sheetsToProcess = processAllSheets
+      ? workbook.SheetNames
+      : [requestedSheet || workbook.SheetNames[0]];
+
+    const allParsedRows: ParsedRowData[] = [];
+    const combinedReport: ParseReport = {
+      totalRowsRead: 0,
+      rowsAccepted: 0,
+      rowsSkipped: 0,
+      skippedDetails: [],
+      warnings: []
+    };
+
+    for (const sName of sheetsToProcess) {
+      const sWs = workbook.Sheets[sName];
+      if (!sWs) continue;
+
+      // Unmerge cho từng sheet
+      unmergeSheetCells(sWs);
+
+      // raw: false bảo toàn giá trị hiển thị dạng chuỗi
+      const sRawData: any[][] = xlsx.utils.sheet_to_json(sWs, { header: 1, defval: '', raw: false });
+      if (sRawData.length === 0) continue;
+
+      // Xác định dòng header cho sheet này
+      let sHeaderRowIndex = headerRowIndex;
+      if (sheetsToProcess.length > 1 && sName !== previewSheetName) {
+        const sDetection = detectHeaderAndMapping(sRawData);
+        sHeaderRowIndex = sDetection.headerRowIndex;
+      }
+
+      const { records, parseReport } = parseSheetRecords(sRawData, sHeaderRowIndex, mapping, { sheetName: sName });
+      allParsedRows.push(...records);
+
+      combinedReport.totalRowsRead += parseReport.totalRowsRead;
+      combinedReport.rowsAccepted += parseReport.rowsAccepted;
+      combinedReport.rowsSkipped += parseReport.rowsSkipped;
+      combinedReport.skippedDetails.push(...parseReport.skippedDetails);
+      combinedReport.warnings.push(...parseReport.warnings);
+    }
+
+    if (allParsedRows.length === 0) {
       return NextResponse.json({ error: 'Không tìm thấy dòng dữ liệu thí sinh nào sau dòng tiêu đề.' }, { status: 400 });
     }
 
@@ -234,7 +308,7 @@ export async function POST(req: NextRequest) {
     // ==========================================
     // CHẠY THUẬT TOÁN ĐỐI CHIẾU 2 CHIỀU (BIDIRECTIONAL VALIDATION ENGINE)
     // ==========================================
-    const valResult = validateCandidateBatch(db, parsedRows, currentUnitCode);
+    const valResult = validateCandidateBatch(db, allParsedRows, currentUnitCode);
 
     // LƯU VÀO DATABASE (STAGING LAYER BẢO TOÀN DỮ LIỆU) TRONG TRANSACTION
     db.exec('BEGIN TRANSACTION;');
@@ -245,8 +319,8 @@ export async function POST(req: NextRequest) {
       const insertUploadStmt = db.prepare(`
         INSERT INTO exam_uploads (
           exam_id, unit_id, version, file_name, file_size, file_hash, original_file_path,
-          total_rows, valid_rows, error_rows, warning_rows, status, uploaded_by, prepared_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          total_rows, valid_rows, error_rows, warning_rows, status, parse_report, uploaded_by, prepared_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const uploadExec = insertUploadStmt.run(
@@ -262,6 +336,7 @@ export async function POST(req: NextRequest) {
         valResult.errorRows,
         valResult.warningRows,
         uploadStatus,
+        JSON.stringify(combinedReport),
         session.id,
         session.id
       );
@@ -270,8 +345,8 @@ export async function POST(req: NextRequest) {
       const insertRecordStmt = db.prepare(`
         INSERT INTO exam_records (
           upload_id, exam_id, unit_id, row_index, employee_code, elearning_account, full_name,
-          raw_data, validation_status, validation_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          sheet_name, raw_data, validation_status, validation_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const insertErrorStmt = db.prepare(`
@@ -290,6 +365,7 @@ export async function POST(req: NextRequest) {
           rec.employeeCode,
           rec.elearningAccount,
           rec.fullName || null,
+          rec.sheetName || 'Sheet1',
           JSON.stringify(rec.rawData), // BẢO TOÀN 100% CÁC CỘT EXCEL
           rec.status,
           errorMsg || null
@@ -339,7 +415,9 @@ export async function POST(req: NextRequest) {
       totalRows: valResult.totalRows,
       validRows: valResult.validRows,
       errorRows: valResult.errorRows,
+      warningRows: valResult.warningRows,
       status: valResult.errorRows === 0 ? 'VALIDATED' : 'STAGING',
+      parseReport: combinedReport,
       sampleErrors: valResult.allErrors.slice(0, 50)
     });
 

@@ -2350,14 +2350,81 @@ function UnitDashboardContent() {
             </div>
 
             <div className="p-6 overflow-y-auto space-y-5">
+              {/* Cảnh báo tính mơ hồ khi có nhiều cột tương đồng */}
+              {previewData.isAmbiguous && previewData.ambiguityWarnings && previewData.ambiguityWarnings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs text-amber-900 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Phát hiện nhiều cột có tiêu đề tương đồng (Cần xác nhận)</span>
+                  </p>
+                  <ul className="list-disc pl-5 space-y-0.5 text-amber-800">
+                    {previewData.ambiguityWarnings.map((w: string, i: number) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Báo cáo đọc file sơ bộ */}
+              {previewData.parseReport && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between font-bold text-slate-800 gap-2">
+                    <span className="flex items-center gap-1.5">
+                      <FileCheck2 className="w-4 h-4 text-emerald-600" />
+                      Báo cáo đọc cấu trúc file:
+                    </span>
+                    <div className="flex gap-3 text-xs font-semibold">
+                      <span className="text-slate-600">Tổng đọc: <b>{previewData.parseReport.totalRowsRead}</b> dòng</span>
+                      <span className="text-emerald-700">Tiếp nhận: <b>{previewData.parseReport.rowsAccepted}</b> dòng</span>
+                      <span className="text-rose-600">Bỏ qua: <b>{previewData.parseReport.rowsSkipped}</b> dòng</span>
+                    </div>
+                  </div>
+                  {previewData.parseReport.warnings && previewData.parseReport.warnings.length > 0 && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-rose-800 space-y-1">
+                      <p className="font-bold text-xs flex items-center gap-1 text-rose-700">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        Cảnh báo các dòng bị bỏ qua không phải dòng trống ({previewData.parseReport.warnings.length} dòng):
+                      </p>
+                      <ul className="list-disc pl-5 max-h-24 overflow-y-auto text-[11px] space-y-0.5">
+                        {previewData.parseReport.warnings.map((warn: string, idx: number) => (
+                          <li key={idx}>{warn}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Sheet dữ liệu:</label>
                   <select
                     value={selectedSheet}
-                    onChange={(e) => setSelectedSheet(e.target.value)}
+                    onChange={async (e) => {
+                      const newSheet = e.target.value;
+                      setSelectedSheet(newSheet);
+                      if (selectedFile && newSheet !== '__ALL__') {
+                        try {
+                          const formData = new FormData();
+                          formData.append('file', selectedFile);
+                          formData.append('examId', String(data.exam.id));
+                          formData.append('sheetName', newSheet);
+                          formData.append('mode', 'preview');
+                          const res = await fetch('/api/uploads', { method: 'POST', body: formData });
+                          const resData = await res.json();
+                          if (res.ok) {
+                            setPreviewData(resData);
+                            setSelectedHeaderRow(resData.detectedHeaderRow);
+                            setMapping(resData.suggestedMapping);
+                          }
+                        } catch (err) {}
+                      }
+                    }}
                     className="w-full border border-slate-300 rounded-xl p-2 text-xs font-semibold focus:ring-2 focus:ring-[#005F3E]"
                   >
+                    {previewData.sheets && previewData.sheets.length > 1 && (
+                      <option value="__ALL__">Tất cả các sheet (Gộp toàn bộ)</option>
+                    )}
                     {previewData.sheets?.map((s: string) => (
                       <option key={s} value={s}>{s}</option>
                     ))}

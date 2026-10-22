@@ -36,7 +36,7 @@ export async function POST(
 
   // Lấy các bản ghi hiện tại của upload này từ exam_records
   const existingRecords = db.prepare(`
-    SELECT id, row_index, employee_code, elearning_account, full_name, raw_data
+    SELECT id, row_index, employee_code, elearning_account, full_name, sheet_name, raw_data
     FROM exam_records
     WHERE upload_id = ?
     ORDER BY row_index ASC
@@ -58,6 +58,7 @@ export async function POST(
       employeeCode: r.employee_code || '',
       elearningAccount: r.elearning_account || '',
       fullName: r.full_name || '',
+      sheetName: r.sheet_name || 'Sheet1',
       rawData: rawDataObj,
       isCandidateRow: true
     };

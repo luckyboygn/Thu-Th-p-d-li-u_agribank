@@ -12,29 +12,127 @@ export interface HeaderDetectionResult {
   suggestedMapping: ColumnMapping;
   confidence: number;
   sampleRows: any[];
+  candidateCodeCols?: string[];
+  candidateElearnCols?: string[];
+  candidateNameCols?: string[];
+  isAmbiguous?: boolean;
+  ambiguityWarnings?: string[];
 }
 
-// Từ khóa nhận diện Mã cán bộ
-const EMP_CODE_KEYWORDS = [
+// Từ khóa nhận diện Mã cán bộ - Khớp chính xác (Ưu tiên cao nhất)
+const EXACT_EMP_CODE_KEYWORDS = [
   'mã cán bộ', 'mã cb', 'macb', 'mã nv', 'mã nhân viên', 
-  'mã cán bộ agribank', 'mã cán bộ (1)', 'ma can bo', 'ma cb'
+  'mã cán bộ agribank', 'mã cán bộ (1)', 'ma can bo', 'ma cb', 'manv'
 ];
 
-// Từ khóa nhận diện Tài khoản eLearning
-const ELEARN_KEYWORDS = [
+// Từ khóa loại trừ cho Mã cán bộ (nếu chứa thì không phải là mã thí sinh)
+const NEGATIVE_EMP_CODE_KEYWORDS = [
+  'giới thiệu', 'người giới thiệu', 'chi nhánh', 'đơn vị', 'phòng ban', 'ngân hàng'
+];
+
+// Từ khóa nhận diện Tài khoản eLearning - Khớp chính xác (Ưu tiên cao nhất)
+const EXACT_ELEARN_KEYWORDS = [
   'tài khoản e-learning', 'tài khoản elearning', 'tk e-learning', 'tk elearning',
-  'tài khoản e - learning', 'username elearning', 'tên đăng nhập', 'e-learning',
-  'elearning', 'tai khoan e-learning', 'tai khoan elearning', 'tài khoản'
+  'tài khoản e - learning', 'username elearning', 'tên đăng nhập elearning',
+  'elearning', 'e-learning', 'tai khoan e-learning', 'tai khoan elearning'
 ];
 
-// Từ khóa nhận diện Họ tên
-const NAME_KEYWORDS = [
-  'họ và tên', 'họ tên', 'họ và tên \'(2)', 'ho va ten', 'ho ten', 'tên cán bộ'
+// Từ khóa loại trừ cho Tài khoản eLearning (tránh chọn nhầm tài khoản ngân hàng / thẻ)
+const NEGATIVE_ELEARN_KEYWORDS = [
+  'ngân hàng', 'tài khoản số', 'stk', 'hệ thống khác', 'thẻ', 'atm', 'thanh toán'
+];
+
+// Từ khóa nhận diện Họ tên - Khớp chính xác
+const EXACT_NAME_KEYWORDS = [
+  'họ và tên', 'họ tên', 'họ và tên \'(2)', 'ho va ten', 'ho ten', 'tên cán bộ', 'họ tên cán bộ'
 ];
 
 function normalizeKeyword(str: any): string {
   if (!str) return '';
   return String(str).toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Tự động giải phóng ô gộp (unmerge) trên Worksheet để tiêu đề 2 dòng hoặc ô gộp không bị khuyết dữ liệu
+ */
+export function unmergeSheetCells(ws: xlsx.WorkSheet): void {
+  if (!ws || !ws['!merges']) return;
+  const range = ws['!ref'] ? xlsx.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 2500, c: 30 } };
+  const maxR = Math.min(range.e.r, 2500);
+
+  for (const m of ws['!merges']) {
+    if (m.s.r > maxR) continue;
+    if (m.e.r - m.s.r > 200) continue;
+    const endR = Math.min(m.e.r, maxR);
+    const originCell = ws[xlsx.utils.encode_cell(m.s)];
+    if (!originCell || originCell.v === undefined || originCell.v === null || originCell.v === '') continue;
+
+    for (let r = m.s.r; r <= endR; r++) {
+      for (let c = m.s.c; c <= Math.min(m.e.c, 30); c++) {
+        const addr = xlsx.utils.encode_cell({ r, c });
+        if (!ws[addr] || ws[addr].v === undefined || ws[addr].v === null || ws[addr].v === '') {
+          ws[addr] = { ...originCell };
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Tính điểm khớp cho cột Mã cán bộ
+ */
+function scoreEmpCodeCol(cellVal: string): number {
+  if (!cellVal) return 0;
+  if (NEGATIVE_EMP_CODE_KEYWORDS.some(neg => cellVal.includes(neg))) return 0;
+
+  // Cấp 1: Khớp chính xác 100%
+  if (EXACT_EMP_CODE_KEYWORDS.includes(cellVal)) return 100;
+
+  // Cấp 2: Chứa từ khóa chuyên biệt
+  if (cellVal.includes('mã cán bộ') || cellVal.includes('mã cb') || cellVal.includes('mã nhân viên')) {
+    return 70;
+  }
+  if (cellVal.includes('macb') || cellVal.includes('mã nv')) {
+    return 60;
+  }
+  return 0;
+}
+
+/**
+ * Tính điểm khớp cho cột Tài khoản eLearning
+ */
+function scoreElearnCol(cellVal: string): number {
+  if (!cellVal) return 0;
+  if (NEGATIVE_ELEARN_KEYWORDS.some(neg => cellVal.includes(neg))) return 0;
+
+  // Cấp 1: Khớp chính xác 100%
+  if (EXACT_ELEARN_KEYWORDS.includes(cellVal)) return 100;
+
+  // Cấp 2: Chứa từ khóa chuyên biệt elearning
+  if (cellVal.includes('elearning') || cellVal.includes('e-learning')) {
+    return 70;
+  }
+
+  // Cấp 3: Từ khóa chung chung (chỉ xét khi không có từ khóa chuyên biệt)
+  if (cellVal === 'tên đăng nhập' || cellVal === 'username') {
+    return 35;
+  }
+  if (cellVal === 'tài khoản') {
+    return 15;
+  }
+  return 0;
+}
+
+/**
+ * Tính điểm khớp cho cột Họ và tên
+ */
+function scoreNameCol(cellVal: string): number {
+  if (!cellVal) return 0;
+  if (EXACT_NAME_KEYWORDS.includes(cellVal)) return 100;
+  if (cellVal.includes('họ và tên') || cellVal.includes('họ tên') || cellVal.includes('tên cán bộ')) {
+    return 60;
+  }
+  return 0;
 }
 
 export function detectHeaderAndMapping(rawData: any[][]): HeaderDetectionResult {
@@ -43,6 +141,12 @@ export function detectHeaderAndMapping(rawData: any[][]): HeaderDetectionResult 
   let detectedHeaders: string[] = [];
   let mapping: ColumnMapping = { employeeCodeCol: '', elearningAccountCol: '', fullNameCol: '' };
 
+  let bestCandidates = {
+    codeCols: [] as Array<{ col: string; score: number }>,
+    elearnCols: [] as Array<{ col: string; score: number }>,
+    nameCols: [] as Array<{ col: string; score: number }>
+  };
+
   const maxScanRows = Math.min(30, rawData.length);
 
   for (let r = 0; r < maxScanRows; r++) {
@@ -50,48 +154,80 @@ export function detectHeaderAndMapping(rawData: any[][]): HeaderDetectionResult 
     if (!Array.isArray(row) || row.length === 0) continue;
 
     let rowScore = 0;
-    let foundCodeCol = '';
-    let foundElearnCol = '';
-    let foundNameCol = '';
+    const codeCandidates: Array<{ col: string; score: number }> = [];
+    const elearnCandidates: Array<{ col: string; score: number }> = [];
+    const nameCandidates: Array<{ col: string; score: number }> = [];
 
     for (let c = 0; c < row.length; c++) {
+      const originalHeader = String(row[c] || '').trim();
       const cellVal = normalizeKeyword(row[c]);
-      if (!cellVal) continue;
+      if (!cellVal || !originalHeader) continue;
 
-      // Kiểm tra Mã cán bộ
-      if (!foundCodeCol && EMP_CODE_KEYWORDS.some(kw => cellVal.includes(kw))) {
-        foundCodeCol = String(row[c]).trim();
-        rowScore += 10;
+      const codeScore = scoreEmpCodeCol(cellVal);
+      if (codeScore > 0) {
+        codeCandidates.push({ col: originalHeader, score: codeScore });
       }
 
-      // Kiểm tra eLearning
-      if (!foundElearnCol && ELEARN_KEYWORDS.some(kw => cellVal.includes(kw))) {
-        foundElearnCol = String(row[c]).trim();
-        rowScore += 10;
+      const elearnScore = scoreElearnCol(cellVal);
+      if (elearnScore > 0) {
+        elearnCandidates.push({ col: originalHeader, score: elearnScore });
       }
 
-      // Kiểm tra Họ tên
-      if (!foundNameCol && NAME_KEYWORDS.some(kw => cellVal.includes(kw))) {
-        foundNameCol = String(row[c]).trim();
-        rowScore += 5;
+      const nameScore = scoreNameCol(cellVal);
+      if (nameScore > 0) {
+        nameCandidates.push({ col: originalHeader, score: nameScore });
       }
 
-      // Cộng điểm cho các từ khóa phổ biến khác
+      // Cộng điểm nhẹ cho các cột thông dụng khác
       if (['stt', 'đơn vị', 'chức vụ', 'phòng ban', 'ngày kiểm tra', 'ca kiểm tra', 'ghi chú'].some(k => cellVal.includes(k))) {
         rowScore += 2;
       }
     }
+
+    // Sắp xếp ứng cử viên theo điểm giảm dần
+    codeCandidates.sort((a, b) => b.score - a.score);
+    elearnCandidates.sort((a, b) => b.score - a.score);
+    nameCandidates.sort((a, b) => b.score - a.score);
+
+    const topCode = codeCandidates[0];
+    const topElearn = elearnCandidates[0];
+    const topName = nameCandidates[0];
+
+    if (topCode) rowScore += topCode.score;
+    if (topElearn) rowScore += topElearn.score;
+    if (topName) rowScore += topName.score;
 
     if (rowScore > bestScore) {
       bestScore = rowScore;
       bestRowIndex = r;
       detectedHeaders = row.map(c => String(c || '').trim());
       mapping = {
-        employeeCodeCol: foundCodeCol,
-        elearningAccountCol: foundElearnCol,
-        fullNameCol: foundNameCol
+        employeeCodeCol: topCode?.col || '',
+        elearningAccountCol: topElearn?.col || '',
+        fullNameCol: topName?.col || ''
+      };
+      bestCandidates = {
+        codeCols: codeCandidates,
+        elearnCols: elearnCandidates,
+        nameCols: nameCandidates
       };
     }
+  }
+
+  // Kiểm tra tính mơ hồ (Ambiguity)
+  let isAmbiguous = false;
+  const ambiguityWarnings: string[] = [];
+
+  const highCodeCandidates = bestCandidates.codeCols.filter(c => c.score >= 60);
+  if (highCodeCandidates.length > 1) {
+    isAmbiguous = true;
+    ambiguityWarnings.push(`Phát hiện ${highCodeCandidates.length} cột có thể là Mã cán bộ: ${highCodeCandidates.map(c => `"${c.col}"`).join(', ')}. Hệ thống tạm chọn "${mapping.employeeCodeCol}". Vui lòng xác nhận.`);
+  }
+
+  const highElearnCandidates = bestCandidates.elearnCols.filter(c => c.score >= 60);
+  if (highElearnCandidates.length > 1) {
+    isAmbiguous = true;
+    ambiguityWarnings.push(`Phát hiện ${highElearnCandidates.length} cột có thể là Tài khoản eLearning: ${highElearnCandidates.map(c => `"${c.col}"`).join(', ')}. Hệ thống tạm chọn "${mapping.elearningAccountCol}". Vui lòng xác nhận.`);
   }
 
   // Lấy 5 dòng mẫu tiếp theo làm preview
@@ -111,8 +247,29 @@ export function detectHeaderAndMapping(rawData: any[][]): HeaderDetectionResult 
     headers: detectedHeaders,
     suggestedMapping: mapping,
     confidence: bestScore,
-    sampleRows
+    sampleRows,
+    candidateCodeCols: bestCandidates.codeCols.map(c => c.col),
+    candidateElearnCols: bestCandidates.elearnCols.map(c => c.col),
+    candidateNameCols: bestCandidates.nameCols.map(c => c.col),
+    isAmbiguous,
+    ambiguityWarnings
   };
+}
+
+export interface SkippedRowDetail {
+  sheetName: string;
+  rowIndex: number;
+  reason: string;
+  preview: string;
+  isWarning: boolean;
+}
+
+export interface ParseReport {
+  totalRowsRead: number;
+  rowsAccepted: number;
+  rowsSkipped: number;
+  skippedDetails: SkippedRowDetail[];
+  warnings: string[];
 }
 
 export interface ParsedRowData {
@@ -120,6 +277,7 @@ export interface ParsedRowData {
   employeeCode: string;
   elearningAccount: string;
   fullName: string;
+  sheetName?: string;
   rawData: Record<string, any>; // Lưu 100% cột nghiệp vụ gốc
   isCandidateRow: boolean; // Phân biệt dòng cán bộ với dòng tiêu đề con/chữ ký
 }
@@ -127,22 +285,49 @@ export interface ParsedRowData {
 export function parseSheetRecords(
   rawData: any[][],
   headerRowIndex: number,
-  mapping: ColumnMapping
-): ParsedRowData[] {
+  mapping: ColumnMapping,
+  options?: { sheetName?: string }
+): { records: ParsedRowData[]; parseReport: ParseReport } {
+  const currentSheetName = options?.sheetName || 'Sheet1';
   const headers = (rawData[headerRowIndex] || []).map((h, i) => String(h || `Cột_${i + 1}`).trim());
   const codeColIdx = headers.findIndex(h => h.toLowerCase() === mapping.employeeCodeCol.toLowerCase());
   const elearnColIdx = headers.findIndex(h => h.toLowerCase() === mapping.elearningAccountCol.toLowerCase());
   const nameColIdx = mapping.fullNameCol ? headers.findIndex(h => h.toLowerCase() === mapping.fullNameCol?.toLowerCase()) : -1;
 
-  const results: ParsedRowData[] = [];
+  const records: ParsedRowData[] = [];
+  const skippedDetails: SkippedRowDetail[] = [];
+  const warnings: string[] = [];
+
+  let totalRowsRead = 0;
 
   for (let r = headerRowIndex + 1; r < rawData.length; r++) {
+    totalRowsRead++;
     const row = rawData[r];
-    if (!row || !Array.isArray(row)) continue;
+    const actualRowIndex = r + 1; // 1-indexed trong Excel
+
+    if (!row || !Array.isArray(row)) {
+      skippedDetails.push({
+        sheetName: currentSheetName,
+        rowIndex: actualRowIndex,
+        reason: 'Dòng trống hoàn toàn',
+        preview: '',
+        isWarning: false
+      });
+      continue;
+    }
 
     // Kiểm tra dòng trống hoàn toàn
     const hasAnyContent = row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '');
-    if (!hasAnyContent) continue;
+    if (!hasAnyContent) {
+      skippedDetails.push({
+        sheetName: currentSheetName,
+        rowIndex: actualRowIndex,
+        reason: 'Dòng trống hoàn toàn',
+        preview: '',
+        isWarning: false
+      });
+      continue;
+    }
 
     // Tạo rawData object giữ nguyên 100% các cột
     const rowObj: Record<string, any> = {};
@@ -154,28 +339,62 @@ export function parseSheetRecords(
     const elearnRaw = elearnColIdx >= 0 ? String(row[elearnColIdx] || '').trim() : '';
     const fullNameRaw = nameColIdx >= 0 ? String(row[nameColIdx] || '').trim() : '';
 
-    // Nhận diện dòng phân cách ca thi (như "I. DANH SÁCH THI CA 1") hoặc dòng chữ ký chân trang
-    const rowValues = row.filter(v => v !== null && v !== undefined && String(v).trim() !== '');
-    const isSectionOrFooter = 
-      (!empCodeRaw && !elearnRaw) ||
-      (rowValues.length <= 2 && (String(rowValues[0]).startsWith('I') || String(rowValues[0]).startsWith('II') || String(rowValues[0]).toLowerCase().includes('tổng cộng') || String(rowValues[0]).toLowerCase().includes('lập bảng')));
+    const nonBlankValues = row.filter(v => v !== null && v !== undefined && String(v).trim() !== '').map(v => String(v).trim());
+    const rowPreview = nonBlankValues.slice(0, 4).join(' | ');
 
-    if (isSectionOrFooter) {
-      // Bỏ qua dòng tiêu đề phân đoạn hoặc dòng tổng cộng/chữ ký
+    // Nhận diện dòng phân cách ca thi (như "I. DANH SÁCH THI CA 1") hoặc dòng tổng cộng/chữ ký
+    const isSectionHeader = nonBlankValues.length <= 2 && (
+      String(nonBlankValues[0]).startsWith('I.') ||
+      String(nonBlankValues[0]).startsWith('II.') ||
+      String(nonBlankValues[0]).startsWith('III.') ||
+      String(nonBlankValues[0]).startsWith('IV.') ||
+      String(nonBlankValues[0]).startsWith('V.')
+    );
+
+    const isFooter = nonBlankValues.some(v => {
+      const lower = v.toLowerCase();
+      return lower.includes('tổng cộng') || lower.includes('người lập biểu') || lower.includes('giám đốc') || lower.includes('trưởng phòng');
+    });
+
+    if (isSectionHeader || isFooter) {
+      const reason = isSectionHeader ? 'Dòng tiêu đề phân ca / phân đoạn' : 'Dòng tổng cộng / chữ ký chân trang';
+      skippedDetails.push({
+        sheetName: currentSheetName,
+        rowIndex: actualRowIndex,
+        reason,
+        preview: rowPreview,
+        isWarning: true
+      });
+      warnings.push(`Sheet "${currentSheetName}", Dòng ${actualRowIndex}: Đã bỏ qua (${reason}: "${rowPreview}").`);
       continue;
     }
 
-    results.push({
-      rowIndex: r + 1, // 1-indexed đúng theo số dòng thực tế trong file Excel của người dùng
+    // Nếu dòng có dữ liệu nhưng thiếu cả Mã cán bộ và eLearning:
+    // KHÔNG âm thầm loại bỏ! Đưa vào records để Validation Engine bắt lỗi MISSING_REQUIRED_FIELD
+    // Giúp người dùng biết rõ dòng nào bị thiếu thông tin thay vì bị mất dữ liệu.
+    records.push({
+      rowIndex: actualRowIndex,
       employeeCode: empCodeRaw,
       elearningAccount: elearnRaw.toLowerCase(), // Chuẩn hóa chữ thường cho eLearning
       fullName: fullNameRaw,
-      rawData: rowObj,
+      sheetName: currentSheetName,
+      rawData: {
+        ...rowObj,
+        _sheet_name: currentSheetName
+      },
       isCandidateRow: true
     });
   }
 
-  return results;
+  const parseReport: ParseReport = {
+    totalRowsRead,
+    rowsAccepted: records.length,
+    rowsSkipped: skippedDetails.length,
+    skippedDetails,
+    warnings
+  };
+
+  return { records, parseReport };
 }
 
 /**

@@ -89,11 +89,13 @@ function runSchemaMigrations(db: DatabaseSync): void {
   addColumnIfNotExists(db, 'units', 'parent_unit_id', 'INTEGER');
   addColumnIfNotExists(db, 'units', 'user_account', 'TEXT');
 
-  // 7. Bảng exam_uploads & training_demand_submissions (receipt_code, warning_rows, prepared_by, approved_by)
+  // 7. Bảng exam_uploads & training_demand_submissions (receipt_code, warning_rows, prepared_by, approved_by, parse_report)
   addColumnIfNotExists(db, 'exam_uploads', 'receipt_code', 'VARCHAR(64)');
   addColumnIfNotExists(db, 'exam_uploads', 'warning_rows', 'INTEGER DEFAULT 0');
   addColumnIfNotExists(db, 'exam_uploads', 'prepared_by', 'INTEGER');
   addColumnIfNotExists(db, 'exam_uploads', 'approved_by', 'INTEGER');
+  addColumnIfNotExists(db, 'exam_uploads', 'parse_report', 'TEXT');
+  addColumnIfNotExists(db, 'exam_records', 'sheet_name', "VARCHAR(100) DEFAULT 'Sheet1'");
 
   addColumnIfNotExists(db, 'training_demand_submissions', 'receipt_code', 'VARCHAR(64)');
   addColumnIfNotExists(db, 'training_demand_submissions', 'prepared_by', 'INTEGER');
