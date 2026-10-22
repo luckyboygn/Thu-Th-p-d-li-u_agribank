@@ -76,9 +76,24 @@ function runSchemaMigrations(db: DatabaseSync): void {
     addColumnIfNotExists(db, 'training_program_topics', col, type);
   }
 
-  // 4b. Bảng training_demand_proposals (các trường theo Mẫu số 06: hình thức đào tạo, nguồn giảng viên/câu hỏi)
+  // 4b. Bảng training_demand_proposals (các trường theo Mẫu số 06: hình thức đào tạo, nguồn giảng viên/câu hỏi, canonical_id)
   addColumnIfNotExists(db, 'training_demand_proposals', 'delivery_method', 'TEXT');
   addColumnIfNotExists(db, 'training_demand_proposals', 'faculty_source', 'TEXT');
+  addColumnIfNotExists(db, 'training_demand_proposals', 'canonical_id', 'INTEGER');
+
+  // 4c. Bảng training_proposal_canonical (Chuẩn hóa đề xuất ngoài khung Mẫu 06)
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS training_proposal_canonical (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_proposals_canonical ON training_demand_proposals(canonical_id);
+    `);
+  } catch (e) {}
 
   // 5. Bảng training_programs (category_type)
   addColumnIfNotExists(db, 'training_programs', 'category_type', "VARCHAR(50) DEFAULT 'TRONG_KHUNG'");

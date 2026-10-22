@@ -458,18 +458,30 @@ CREATE INDEX IF NOT EXISTS idx_demand_top_pos ON training_demand_topics(demand_p
 CREATE INDEX IF NOT EXISTS idx_demand_top_top ON training_demand_topics(topic_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_demand_top_pos_unique ON training_demand_topics(demand_position_id, topic_id);
 
--- BẢNG 23: ĐỀ XUẤT NHU CẦU ĐÀO TẠO NGOÀI KHUNG (MỤC 2.8)
+-- BẢNG 23: ĐỀ XUẤT NHU CẦU ĐÀO TẠO NGOÀI KHUNG (MỤC 2.8 & P5)
+CREATE TABLE IF NOT EXISTS training_proposal_canonical (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS training_demand_proposals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     submission_id INTEGER NOT NULL REFERENCES training_demand_submissions(id) ON DELETE CASCADE,
+    canonical_id INTEGER REFERENCES training_proposal_canonical(id) ON DELETE SET NULL,
     proposal_name VARCHAR(255) NOT NULL,
     target_audience VARCHAR(255),
     participant_count INTEGER NOT NULL DEFAULT 1,
     expected_duration VARCHAR(100),
+    delivery_method VARCHAR(255),
+    faculty_source VARCHAR(255),
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_proposals_sub ON training_demand_proposals(submission_id);
+CREATE INDEX IF NOT EXISTS idx_proposals_canonical ON training_demand_proposals(canonical_id);
 
 

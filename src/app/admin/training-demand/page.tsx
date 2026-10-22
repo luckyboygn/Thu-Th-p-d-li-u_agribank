@@ -34,7 +34,9 @@ import {
   UploadCloud,
   FileUp,
   Mail,
-  FileCheck
+  FileCheck,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import BatchProxyUploadModal from '@/components/BatchProxyUploadModal';
 
@@ -87,10 +89,23 @@ export default function AdminTrainingDemandPage() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<SummaryData | null>(null);
 
-  // Tab 7: Đề xuất ngoài khung (Mục 2.8)
+  // Tab 7: Đề xuất ngoài khung (Mục 2.8 & P5 Chuẩn hóa)
   const [proposalsList, setProposalsList] = useState<any[]>([]);
+  const [canonicalGroups, setCanonicalGroups] = useState<any[]>([]);
+  const [canonicalStats, setCanonicalStats] = useState<any>(null);
+  const [canonicalMeta, setCanonicalMeta] = useState<any>(null);
   const [proposalsLoading, setProposalsLoading] = useState(false);
   const [proposalSearch, setProposalSearch] = useState('');
+  const [proposalViewMode, setProposalViewMode] = useState<'canonical' | 'mapping' | 'detailed'>('canonical');
+
+  // Modal & form chuẩn hóa Canonical
+  const [showCreateCanonModal, setShowCreateCanonModal] = useState(false);
+  const [newCanonName, setNewCanonName] = useState('');
+  const [newCanonDesc, setNewCanonDesc] = useState('');
+  const [canonActionLoading, setCanonActionLoading] = useState(false);
+  const [selectedUnmappedNames, setSelectedUnmappedNames] = useState<string[]>([]);
+  const [targetCanonicalId, setTargetCanonicalId] = useState<number | ''>('');
+  const [canonNotice, setCanonNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Tab 6: So sánh giữa các đợt (Comparison - Mục 2.7)
   const [collections, setCollections] = useState<any[]>([]);
@@ -556,7 +571,7 @@ export default function AdminTrainingDemandPage() {
     }
   };
 
-  // Tab 7: Tải danh sách Đề xuất ngoài khung (Mục 2.8)
+  // Tab 7: Tải danh sách Đề xuất ngoài khung (Mục 2.8 & P5 Chuẩn hóa)
   const loadProposalsData = async () => {
     try {
       setProposalsLoading(true);
@@ -564,11 +579,134 @@ export default function AdminTrainingDemandPage() {
       if (res.ok) {
         const data = await res.json();
         setProposalsList(data.proposals || []);
+        setCanonicalGroups(data.canonicalGroups || []);
+        setCanonicalStats({
+          mappedParticipants: data.mappedParticipants || 0,
+          unmappedParticipants: data.unmappedParticipants || 0,
+          totalParticipants: data.totalParticipants || 0,
+          totalProposals: data.totalProposals || 0
+        });
+      }
+
+      // Tải dữ liệu metadata quản lý Canonical
+      const cRes = await fetch('/api/training-proposals/canonical');
+      if (cRes.ok) {
+        const cData = await cRes.json();
+        setCanonicalMeta(cData);
       }
     } catch (err) {
       console.error('Lỗi tải danh sách đề xuất ngoài khung:', err);
     } finally {
       setProposalsLoading(false);
+    }
+  };
+
+  // Tạo Chuyên đề chuẩn hóa mới
+  const handleCreateCanonical = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCanonName.trim()) return;
+    try {
+      setCanonActionLoading(true);
+      setCanonNotice(null);
+      const res = await fetch('/api/training-proposals/canonical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CREATE_CANONICAL',
+          name: newCanonName.trim(),
+          description: newCanonDesc.trim()
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi khi tạo chuyên đề chuẩn.');
+      setCanonNotice({ type: 'success', text: data.message });
+      setNewCanonName('');
+      setNewCanonDesc('');
+      setShowCreateCanonModal(false);
+      await loadProposalsData();
+    } catch (err: any) {
+      setCanonNotice({ type: 'error', text: err.message });
+    } finally {
+      setCanonActionLoading(false);
+    }
+  };
+
+  // Gộp các đề xuất chưa phân loại vào Canonical đã chọn
+  const handleMapProposals = async () => {
+    if (!targetCanonicalId || selectedUnmappedNames.length === 0) {
+      setCanonNotice({ type: 'error', text: 'Vui lòng chọn Chuyên đề chuẩn và ít nhất một đề xuất cần gộp.' });
+      return;
+    }
+    try {
+      setCanonActionLoading(true);
+      setCanonNotice(null);
+      const res = await fetch('/api/training-proposals/canonical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'MAP_PROPOSALS',
+          canonical_id: Number(targetCanonicalId),
+          proposal_names: selectedUnmappedNames
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi khi gộp đề xuất.');
+      setCanonNotice({ type: 'success', text: data.message });
+      setSelectedUnmappedNames([]);
+      setTargetCanonicalId('');
+      await loadProposalsData();
+    } catch (err: any) {
+      setCanonNotice({ type: 'error', text: err.message });
+    } finally {
+      setCanonActionLoading(false);
+    }
+  };
+
+  // Xóa Canonical (đưa các đề xuất về Chưa phân loại, bảo toàn proposal_name gốc)
+  const handleDeleteCanonical = async (id: number, name: string) => {
+    if (!confirm(`Xác nhận xóa chuyên đề chuẩn "${name}"? Các đề xuất liên kết sẽ được đưa về nhóm "Chưa phân loại" và tên gốc của đơn vị vẫn được bảo toàn nguyên vẹn.`)) {
+      return;
+    }
+    try {
+      setCanonActionLoading(true);
+      setCanonNotice(null);
+      const res = await fetch('/api/training-proposals/canonical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'DELETE_CANONICAL',
+          id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi khi xóa chuyên đề chuẩn.');
+      setCanonNotice({ type: 'success', text: data.message });
+      await loadProposalsData();
+    } catch (err: any) {
+      setCanonNotice({ type: 'error', text: err.message });
+    } finally {
+      setCanonActionLoading(false);
+    }
+  };
+
+  // Tự động gộp các đề xuất khớp tên chuẩn hóa
+  const handleAutoMapExact = async () => {
+    try {
+      setCanonActionLoading(true);
+      setCanonNotice(null);
+      const res = await fetch('/api/training-proposals/canonical', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'AUTO_MAP_EXACT' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Lỗi khi tự động gộp.');
+      setCanonNotice({ type: 'success', text: data.message });
+      await loadProposalsData();
+    } catch (err: any) {
+      setCanonNotice({ type: 'error', text: err.message });
+    } finally {
+      setCanonActionLoading(false);
     }
   };
 
@@ -2894,162 +3032,678 @@ export default function AdminTrainingDemandPage() {
         </div>
       )}
 
-      {/* TAB 7: ĐỀ XUẤT NGOÀI KHUNG (MỤC 2.8) */}
+      {/* TAB 7: ĐỀ XUẤT NGOÀI KHUNG (MỤC 2.8 & P5 CHUẨN HÓA CANONICAL) */}
       {activeTab === 'proposal' && (
         <div className="space-y-4">
-          {/* Thanh công cụ tìm kiếm và nút xuất Excel */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex-1 flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          {/* Thông báo thao tác Canonical */}
+          {canonNotice && (
+            <div className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between border ${
+              canonNotice.type === 'success'
+                ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                : 'bg-red-50 text-red-900 border-red-300'
+            }`}>
+              <div className="flex items-center gap-2">
+                {canonNotice.type === 'success' ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
+                <span>{canonNotice.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCanonNotice(null)}
+                className="text-slate-400 hover:text-slate-600 text-xs px-2 py-0.5 rounded cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Thanh công cụ tìm kiếm, chuyển đổi chế độ xem và hành động */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            {/* Chuyển chế độ xem */}
+            <div className="flex items-center p-1 bg-slate-100 rounded-lg shrink-0">
+              <button
+                type="button"
+                onClick={() => setProposalViewMode('canonical')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  proposalViewMode === 'canonical'
+                    ? 'bg-white text-[#005F3E] shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                1. Tổng Hợp Theo Tên Chuẩn ({canonicalGroups.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setProposalViewMode('mapping')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  proposalViewMode === 'mapping'
+                    ? 'bg-white text-blue-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                2. Công Cụ Gộp / Ánh Xạ
+              </button>
+              <button
+                type="button"
+                onClick={() => setProposalViewMode('detailed')}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  proposalViewMode === 'detailed'
+                    ? 'bg-white text-slate-800 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                3. Chi Tiết Đơn Vị ({proposalsList.length})
+              </button>
+            </div>
+
+            {/* Ô tìm kiếm & Các nút hành động */}
+            <div className="flex-1 flex flex-wrap items-center justify-end gap-2.5">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
-                  placeholder="Tìm theo tên chuyên đề, tên đơn vị hoặc mã đơn vị..."
+                  placeholder="Tìm tên chuyên đề, đơn vị..."
                   value={proposalSearch}
                   onChange={(e) => setProposalSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateCanonModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                title="Tạo mới một tên chuyên đề chuẩn hóa để gom nhóm"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tạo Tên Chuẩn Mới</span>
+              </button>
+
+              <a
+                href="/api/training-reports?type=EXPORT_PROPOSALS"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+                title="Tải toàn bộ đề xuất ngoài khung của các đơn vị (kèm cột Canonical và tên gốc)"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Xuất Excel Mẫu 06</span>
+              </a>
+
               <button
                 type="button"
                 onClick={loadProposalsData}
                 disabled={proposalsLoading}
-                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                title="Tải lại dữ liệu"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${proposalsLoading ? 'animate-spin' : ''}`} />
-                <span>Làm mới</span>
               </button>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <a
-                href="/api/training-reports?type=EXPORT_PROPOSALS"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
-                title="Tải toàn bộ đề xuất ngoài khung của các đơn vị thành file Excel"
-              >
-                <Download className="w-4 h-4" />
-                <span>Xuất Excel Đề Xuất Ngoài Khung</span>
-              </a>
             </div>
           </div>
 
           {/* Dữ liệu và KPI */}
           {proposalsLoading ? (
-            <div className="bg-white p-12 rounded-xl border border-slate-200 text-center text-slate-500 text-sm">
-              Đang tải danh sách đề xuất ngoài khung từ các đơn vị...
+            <div className="bg-white p-12 rounded-xl border border-slate-200 text-center text-slate-500 text-sm flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-[#005F3E]" />
+              <span>Đang tải và tổng hợp dữ liệu đề xuất ngoài khung...</span>
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Thẻ KPI */}
+              {/* 4 Thẻ KPI Tóm tắt */}
               {(() => {
-                const filtered = proposalsList.filter(p => {
-                  if (!proposalSearch.trim()) return true;
-                  const q = proposalSearch.toLowerCase();
-                  return (
-                    (p.proposal_name && p.proposal_name.toLowerCase().includes(q)) ||
-                    (p.unit_name && p.unit_name.toLowerCase().includes(q)) ||
-                    (p.unit_code && p.unit_code.toLowerCase().includes(q)) ||
-                    (p.target_audience && p.target_audience.toLowerCase().includes(q))
-                  );
-                });
-
-                const totalParticipants = filtered.reduce((s, p) => s + (p.participant_count || 0), 0);
-                const uniqueUnitsCount = new Set(filtered.map(p => p.unit_code)).size;
+                const totalProps = proposalsList.length;
+                const totalPeople = proposalsList.reduce((s, p) => s + (p.participant_count || 0), 0);
+                const mappedCount = canonicalGroups.filter(g => g.isMapped).length;
+                const mappedPeople = canonicalGroups.filter(g => g.isMapped).reduce((s, g) => s + g.totalParticipants, 0);
+                const unmappedGroup = canonicalGroups.find(g => !g.isMapped);
+                const unmappedPeople = unmappedGroup ? unmappedGroup.totalParticipants : 0;
+                const unmappedDistinctProps = unmappedGroup ? unmappedGroup.variations.length : 0;
+                const coverage = totalPeople > 0 ? Math.round((mappedPeople / totalPeople) * 100) : 0;
 
                 return (
-                  <>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                        <div className="text-[11px] font-bold text-slate-500 uppercase">
-                          Tổng số chuyên đề đề xuất
-                        </div>
-                        <div className="text-2xl font-extrabold text-slate-800 mt-1">
-                          {filtered.length.toLocaleString('vi-VN')}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          Từ các đơn vị toàn hệ thống
-                        </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase">Tổng số đề xuất & người học</div>
+                      <div className="text-xl font-black text-slate-800 mt-1">
+                        {totalProps.toLocaleString('vi-VN')} <span className="text-xs font-normal text-slate-500">đề xuất</span>
                       </div>
-
-                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                        <div className="text-[11px] font-bold text-slate-500 uppercase">
-                          Tổng lượt người học dự kiến
-                        </div>
-                        <div className="text-2xl font-extrabold text-[#005F3E] mt-1">
-                          {totalParticipants.toLocaleString('vi-VN')}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          Lượt cán bộ nhân viên
-                        </div>
-                      </div>
-
-                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-                        <div className="text-[11px] font-bold text-slate-500 uppercase">
-                          Số đơn vị gửi đề xuất
-                        </div>
-                        <div className="text-2xl font-extrabold text-amber-600 mt-1">
-                          {uniqueUnitsCount.toLocaleString('vi-VN')}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-0.5">
-                          Đơn vị có phát sinh nhu cầu ngoài khung
-                        </div>
+                      <div className="text-xs font-bold text-[#005F3E] mt-0.5">
+                        {totalPeople.toLocaleString('vi-VN')} lượt người
                       </div>
                     </div>
 
-                    {/* Bảng chi tiết */}
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-                      <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                        <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wide">
-                          Danh sách chi tiết nhu cầu đào tạo ngoài 26 khung chuẩn ({filtered.length} bản ghi)
+                    <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 shadow-xs">
+                      <div className="text-[10px] font-bold text-emerald-800 uppercase">Đã chuẩn hóa (Canonical)</div>
+                      <div className="text-xl font-black text-[#005F3E] mt-1">
+                        {mappedCount} <span className="text-xs font-normal text-emerald-700">chuyên đề</span>
+                      </div>
+                      <div className="text-xs font-bold text-emerald-700 mt-0.5">
+                        {mappedPeople.toLocaleString('vi-VN')} lượt người ({coverage}%)
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/40 shadow-xs">
+                      <div className="text-[10px] font-bold text-amber-800 uppercase">Chưa phân loại (Unmapped)</div>
+                      <div className="text-xl font-black text-amber-700 mt-1">
+                        {unmappedDistinctProps} <span className="text-xs font-normal text-amber-600">tên đề xuất</span>
+                      </div>
+                      <div className="text-xs font-bold text-amber-800 mt-0.5">
+                        {unmappedPeople.toLocaleString('vi-VN')} lượt người ({100 - coverage}%)
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-3.5 rounded-xl border border-blue-200 bg-blue-50/40 shadow-xs">
+                      <div className="text-[10px] font-bold text-blue-800 uppercase">Đơn vị tham gia đề xuất</div>
+                      <div className="text-xl font-black text-blue-700 mt-1">
+                        {new Set(proposalsList.map(p => p.unit_code)).size} <span className="text-xs font-normal text-blue-600">đơn vị</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        Toàn hệ thống Agribank
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ============================================================== */}
+              {/* CHẾ ĐỘ 1: BÁO CÁO TỔNG HỢP THEO CHUYÊN ĐỀ CHUẨN HÓA (CANONICAL) */}
+              {/* ============================================================== */}
+              {proposalViewMode === 'canonical' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                  <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                    <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wide flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-[#005F3E]" />
+                      <span>Báo cáo tổng hợp gom theo Chuyên đề chuẩn hóa ({canonicalGroups.length} nhóm)</span>
+                    </h4>
+                    <span className="text-[11px] text-slate-500 italic">
+                      * Nhóm "Chưa phân loại" bao gồm tất cả các đề xuất chưa được gộp, không bị bỏ khỏi tổng số.
+                    </span>
+                  </div>
+
+                  {canonicalGroups.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      Chưa có dữ liệu đề xuất ngoài khung nào.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[650px] overflow-y-auto">
+                      <table className="w-full text-left text-xs text-slate-700">
+                        <thead className="bg-[#F4F6F8] font-bold text-slate-700 uppercase text-[11px] sticky top-0 border-b border-slate-200 z-10">
+                          <tr>
+                            <th className="px-3 py-3 w-12 text-center">STT</th>
+                            <th className="px-4 py-3 min-w-[240px]">Chuyên đề chuẩn hóa (Canonical)</th>
+                            <th className="px-3 py-3 w-28 text-center font-mono">Số ĐV đề xuất</th>
+                            <th className="px-3 py-3 w-32 text-right font-mono">Tổng người học</th>
+                            <th className="px-3 py-3 w-24 text-right font-mono">Tỷ trọng</th>
+                            <th className="px-4 py-3 min-w-[320px]">Các biến thể tên gốc của đơn vị đã gom vào</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(() => {
+                            const totalAll = canonicalGroups.reduce((s, g) => s + g.totalParticipants, 0);
+
+                            const filteredGroups = canonicalGroups.filter(g => {
+                              if (!proposalSearch.trim()) return true;
+                              const q = proposalSearch.toLowerCase();
+                              return (
+                                g.canonicalName.toLowerCase().includes(q) ||
+                                g.variations.some((v: string) => v.toLowerCase().includes(q)) ||
+                                g.units.some((u: any) => u.unitName.toLowerCase().includes(q) || u.unitCode.toLowerCase().includes(q))
+                              );
+                            });
+
+                            return filteredGroups.map((g, idx) => {
+                              const pct = totalAll > 0 ? ((g.totalParticipants / totalAll) * 100).toFixed(1) : '0.0';
+                              const isUnmapped = !g.isMapped;
+
+                              return (
+                                <tr
+                                  key={`canon-${g.canonicalId || 'unmapped'}`}
+                                  className={`transition-colors ${
+                                    isUnmapped
+                                      ? 'bg-amber-50/60 hover:bg-amber-100/60 font-medium'
+                                      : 'hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <td className="px-3 py-3 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`font-bold text-xs ${isUnmapped ? 'text-amber-900 font-black flex items-center gap-1.5' : 'text-[#005F3E]'}`}>
+                                        {isUnmapped && <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
+                                        {g.canonicalName}
+                                      </span>
+                                      {isUnmapped ? (
+                                        <span className="text-[10px] bg-amber-200/70 text-amber-900 px-1.5 py-0.5 rounded font-bold">
+                                          Chưa gom nhóm
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-semibold">
+                                          Chuẩn hóa
+                                        </span>
+                                      )}
+                                    </div>
+                                    {g.description && (
+                                      <div className="text-[11px] text-slate-500 mt-0.5">{g.description}</div>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-3 text-center font-mono font-bold text-slate-800">
+                                    {g.unitCount} ĐV
+                                  </td>
+                                  <td className="px-3 py-3 text-right font-mono font-extrabold text-[#A81D22] text-sm">
+                                    {Number(g.totalParticipants || 0).toLocaleString('vi-VN')}
+                                  </td>
+                                  <td className="px-3 py-3 text-right font-mono text-slate-600">
+                                    {pct}%
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                      {g.variations.map((v: string, vIdx: number) => (
+                                        <span
+                                          key={vIdx}
+                                          className={`text-[10.5px] px-2 py-0.5 rounded-md border ${
+                                            isUnmapped
+                                              ? 'bg-white border-amber-300 text-amber-950'
+                                              : 'bg-slate-50 border-slate-200 text-slate-700'
+                                          }`}
+                                          title={`Tên gốc: "${v}"`}
+                                        >
+                                          "{v}"
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                        <tfoot className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300 text-xs sticky bottom-0">
+                          <tr>
+                            <td colSpan={2} className="px-4 py-3 uppercase text-right">Tổng cộng toàn hệ thống:</td>
+                            <td className="px-3 py-3 text-center font-mono">
+                              {new Set(proposalsList.map(p => p.unit_code)).size} ĐV
+                            </td>
+                            <td className="px-3 py-3 text-right font-mono text-sm text-[#A81D22]">
+                              {proposalsList.reduce((s, p) => s + (p.participant_count || 0), 0).toLocaleString('vi-VN')}
+                            </td>
+                            <td className="px-3 py-3 text-right font-mono">100.0%</td>
+                            <td className="px-4 py-3 text-[11px] text-slate-500 font-normal">
+                              Toàn bộ {proposalsList.length} đề xuất đã được gom nhóm (bao gồm cả Chưa phân loại).
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ============================================================== */}
+              {/* CHẾ ĐỘ 2: CÔNG CỤ GỘP / ÁNH XẠ ĐỀ XUẤT VÀO TÊN CHUẨN */}
+              {/* ============================================================== */}
+              {proposalViewMode === 'mapping' && (
+                <div className="space-y-4">
+                  {/* Bảng thao tác gộp */}
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-amber-600" />
+                          <span>Công cụ gom nhiều đề xuất trùng ý vào một Chuyên đề chuẩn</span>
                         </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Chọn các đề xuất chưa phân loại ở bảng dưới và chọn Chuyên đề chuẩn đích để gộp. Tên gốc của từng đơn vị vẫn được bảo toàn 100%.
+                        </p>
                       </div>
 
-                      {filtered.length === 0 ? (
+                      <button
+                        type="button"
+                        onClick={handleAutoMapExact}
+                        disabled={canonActionLoading}
+                        className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        title="Tự động gộp các đề xuất có tên trùng khớp sau chuẩn hóa (bỏ dấu/chữ thường)"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+                        <span>Tự Động Gộp Tên Khớp</span>
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <div className="flex-1">
+                        <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
+                          1. Chọn Chuyên đề chuẩn đích:
+                        </label>
+                        <select
+                          value={targetCanonicalId}
+                          onChange={(e) => setTargetCanonicalId(e.target.value ? Number(e.target.value) : '')}
+                          className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs bg-white font-medium focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="">-- Chọn chuyên đề chuẩn hóa đã tạo --</option>
+                          {(canonicalMeta?.canonicals || []).map((c: any) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} ({c.total_participants} người học • {c.unit_count} ĐV)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="sm:self-end">
+                        <button
+                          type="button"
+                          onClick={handleMapProposals}
+                          disabled={canonActionLoading || !targetCanonicalId || selectedUnmappedNames.length === 0}
+                          className="w-full sm:w-auto px-5 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-lg text-xs font-bold shadow-xs transition-all disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>Gộp {selectedUnmappedNames.length} Đề Xuất Đã Chọn</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Hai cột: Danh sách chưa phân loại và Danh sách Canonical hiện có */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    {/* Cột trái: Đề xuất chưa phân loại (7 cột) */}
+                    <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+                      <div className="px-4 py-3 border-b border-slate-200 bg-amber-50/70 flex items-center justify-between">
+                        <div className="font-bold text-xs text-amber-950 flex items-center gap-1.5 uppercase">
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          <span>Danh sách đề xuất CHƯA PHÂN LOẠI ({canonicalMeta?.unmapped?.length || 0} tên)</span>
+                        </div>
+                        <div className="text-[11px] text-amber-900 font-semibold">
+                          Đã chọn: {selectedUnmappedNames.length}
+                        </div>
+                      </div>
+
+                      {(!canonicalMeta?.unmapped || canonicalMeta.unmapped.length === 0) ? (
                         <div className="p-8 text-center text-slate-400 text-xs">
-                          Chưa có bản ghi đề xuất nào phù hợp.
+                          Tất cả các đề xuất đã được chuẩn hóa! Không còn mục nào chưa phân loại.
                         </div>
                       ) : (
-                        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                           <table className="w-full text-left text-xs text-slate-700">
                             <thead className="bg-[#F4F6F8] font-bold text-slate-700 uppercase text-[11px] sticky top-0 border-b border-slate-200 z-10">
                               <tr>
-                                <th className="px-3 py-3 w-12 text-center">STT</th>
-                                <th className="px-3 py-3 w-28 font-mono text-[#005F3E]">Mã ĐV</th>
-                                <th className="px-4 py-3 min-w-[160px]">Tên đơn vị</th>
-                                <th className="px-4 py-3 min-w-[220px]">Tên đề xuất chuyên đề / khóa học</th>
-                                <th className="px-4 py-3 min-w-[180px]">Đối tượng tham gia</th>
-                                <th className="px-3 py-3 w-28 text-right font-mono">Số người</th>
-                                <th className="px-3 py-3 w-28 text-center">Thời lượng</th>
-                                <th className="px-4 py-3 min-w-[200px]">Ghi chú / Chi tiết</th>
-                                <th className="px-3 py-3 w-36 text-center text-slate-500 font-mono">Ngày đề xuất</th>
+                                <th className="px-3 py-2.5 w-10 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      canonicalMeta.unmapped.length > 0 &&
+                                      selectedUnmappedNames.length === canonicalMeta.unmapped.length
+                                    }
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedUnmappedNames(canonicalMeta.unmapped.map((u: any) => u.proposalName));
+                                      } else {
+                                        setSelectedUnmappedNames([]);
+                                      }
+                                    }}
+                                    className="rounded text-[#005F3E] focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                </th>
+                                <th className="px-3 py-2.5 min-w-[200px]">Tên đề xuất gốc của đơn vị</th>
+                                <th className="px-2 py-2.5 w-16 text-center font-mono">ĐV</th>
+                                <th className="px-3 py-2.5 w-20 text-right font-mono">Người</th>
+                                <th className="px-3 py-2.5 min-w-[140px]">Đơn vị đề xuất</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {filtered.map((item, idx) => (
-                                <tr key={`prop-${item.id || idx}`} className="hover:bg-slate-50 transition-colors">
-                                  <td className="px-3 py-2.5 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                                  <td className="px-3 py-2.5 font-mono font-bold text-slate-900">{item.unit_code}</td>
-                                  <td className="px-4 py-2.5 font-semibold text-slate-800">{item.unit_name}</td>
-                                  <td className="px-4 py-2.5 font-bold text-[#005F3E]">{item.proposal_name}</td>
-                                  <td className="px-4 py-2.5 text-slate-600">{item.target_audience || '—'}</td>
-                                  <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900">
-                                    {Number(item.participant_count || 0).toLocaleString('vi-VN')}
-                                  </td>
-                                  <td className="px-3 py-2.5 text-center text-slate-600">{item.expected_duration || '—'}</td>
-                                  <td className="px-4 py-2.5 text-slate-600">{item.notes || '—'}</td>
-                                  <td className="px-3 py-2.5 text-center text-slate-400 font-mono text-[11px]">
-                                    {item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN') : '—'}
-                                  </td>
-                                </tr>
-                              ))}
+                              {canonicalMeta.unmapped.map((u: any, idx: number) => {
+                                const isChecked = selectedUnmappedNames.includes(u.proposalName);
+                                return (
+                                  <tr
+                                    key={idx}
+                                    onClick={() => {
+                                      if (isChecked) {
+                                        setSelectedUnmappedNames(selectedUnmappedNames.filter(n => n !== u.proposalName));
+                                      } else {
+                                        setSelectedUnmappedNames([...selectedUnmappedNames, u.proposalName]);
+                                      }
+                                    }}
+                                    className={`cursor-pointer transition-colors ${isChecked ? 'bg-emerald-50/80 font-semibold' : 'hover:bg-slate-50'}`}
+                                  >
+                                    <td className="px-3 py-2 text-center" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setSelectedUnmappedNames([...selectedUnmappedNames, u.proposalName]);
+                                          } else {
+                                            setSelectedUnmappedNames(selectedUnmappedNames.filter(n => n !== u.proposalName));
+                                          }
+                                        }}
+                                        className="rounded text-[#005F3E] focus:ring-emerald-500 cursor-pointer"
+                                      />
+                                    </td>
+                                    <td className="px-3 py-2 font-medium text-slate-900">
+                                      "{u.proposalName}"
+                                    </td>
+                                    <td className="px-2 py-2 text-center font-mono font-bold text-slate-700">
+                                      {u.unitCount}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-mono font-bold text-[#A81D22]">
+                                      {Number(u.totalParticipants || 0).toLocaleString('vi-VN')}
+                                    </td>
+                                    <td className="px-3 py-2 text-[10.5px] text-slate-500 truncate max-w-[160px]" title={(u.units || []).map((x: any) => `[${x.unitCode}] ${x.unitName}`).join(', ')}>
+                                      {(u.units || []).map((x: any) => x.unitCode).join(', ')}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
                       )}
                     </div>
-                  </>
-                );
-              })()}
+
+                    {/* Cột phải: Danh sách Chuyên đề chuẩn hiện có (5 cột) */}
+                    <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+                      <div className="px-4 py-3 border-b border-slate-200 bg-emerald-50/70 flex items-center justify-between">
+                        <div className="font-bold text-xs text-emerald-950 flex items-center gap-1.5 uppercase">
+                          <CheckCircle2 className="w-4 h-4 text-[#005F3E]" />
+                          <span>Chuyên đề chuẩn hóa hiện có ({(canonicalMeta?.canonicals || []).length})</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateCanonModal(true)}
+                          className="text-[11px] text-[#005F3E] hover:underline font-bold cursor-pointer"
+                        >
+                          + Thêm mới
+                        </button>
+                      </div>
+
+                      {(!canonicalMeta?.canonicals || canonicalMeta.canonicals.length === 0) ? (
+                        <div className="p-8 text-center text-slate-400 text-xs">
+                          Chưa tạo chuyên đề chuẩn nào. Vui lòng bấm "+ Thêm mới" ở trên để bắt đầu gom nhóm.
+                        </div>
+                      ) : (
+                        <div className="overflow-y-auto max-h-[500px] divide-y divide-slate-100 p-2 space-y-2">
+                          {canonicalMeta.canonicals.map((c: any) => (
+                            <div key={c.id} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/60 hover:bg-white transition-all space-y-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="font-bold text-xs text-[#005F3E] leading-snug">
+                                  {c.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCanonical(c.id, c.name)}
+                                  className="text-slate-400 hover:text-red-600 transition-colors cursor-pointer shrink-0 p-1"
+                                  title="Xóa chuyên đề chuẩn này (đưa các đề xuất về Chưa phân loại)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              {c.description && (
+                                <p className="text-[10.5px] text-slate-500">{c.description}</p>
+                              )}
+                              <div className="flex items-center gap-3 pt-1 text-[11px] font-mono">
+                                <span className="text-slate-600 font-semibold">{c.proposal_count} đề xuất</span>
+                                <span className="text-slate-400">•</span>
+                                <span className="text-blue-700 font-bold">{c.unit_count} đơn vị</span>
+                                <span className="text-slate-400">•</span>
+                                <span className="text-[#A81D22] font-black">{Number(c.total_participants || 0).toLocaleString('vi-VN')} lượt</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ============================================================== */}
+              {/* CHẾ ĐỘ 3: BẢNG CHI TIẾT TỪNG ĐƠN VỊ (KÈM CỘT CANONICAL VÀ TÊN GỐC) */}
+              {/* ============================================================== */}
+              {proposalViewMode === 'detailed' && (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                  <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                    <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wide">
+                      Danh sách chi tiết đề xuất ngoài khung theo từng đơn vị ({proposalsList.length} bản ghi)
+                    </h4>
+                    <span className="text-[11px] text-slate-500 italic">
+                      Hiển thị song song Tên đề xuất gốc của đơn vị và Chuyên đề chuẩn hóa tương ứng.
+                    </span>
+                  </div>
+
+                  {proposalsList.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs">
+                      Chưa có bản ghi đề xuất nào phù hợp.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                      <table className="w-full text-left text-xs text-slate-700">
+                        <thead className="bg-[#F4F6F8] font-bold text-slate-700 uppercase text-[11px] sticky top-0 border-b border-slate-200 z-10">
+                          <tr>
+                            <th className="px-3 py-3 w-12 text-center">STT</th>
+                            <th className="px-3 py-3 w-28 font-mono text-[#005F3E]">Mã ĐV</th>
+                            <th className="px-4 py-3 min-w-[150px]">Tên đơn vị</th>
+                            <th className="px-4 py-3 min-w-[200px]">Chuyên đề chuẩn hóa (Canonical)</th>
+                            <th className="px-4 py-3 min-w-[220px]">Tên đề xuất gốc của đơn vị</th>
+                            <th className="px-4 py-3 min-w-[160px]">Đối tượng</th>
+                            <th className="px-3 py-3 w-24 text-right font-mono">Số người</th>
+                            <th className="px-3 py-3 w-24 text-center">Thời lượng</th>
+                            <th className="px-4 py-3 min-w-[160px]">Ghi chú / Kiến nghị</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(() => {
+                            const filtered = proposalsList.filter(p => {
+                              if (!proposalSearch.trim()) return true;
+                              const q = proposalSearch.toLowerCase();
+                              return (
+                                (p.proposal_name && p.proposal_name.toLowerCase().includes(q)) ||
+                                (p.canonical_name && p.canonical_name.toLowerCase().includes(q)) ||
+                                (p.unit_name && p.unit_name.toLowerCase().includes(q)) ||
+                                (p.unit_code && p.unit_code.toLowerCase().includes(q))
+                              );
+                            });
+
+                            return filtered.map((item, idx) => (
+                              <tr key={`prop-${item.id || idx}`} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-3 py-2.5 text-center text-slate-400 font-mono text-[11px]">{idx + 1}</td>
+                                <td className="px-3 py-2.5 font-mono font-bold text-slate-900">{item.unit_code}</td>
+                                <td className="px-4 py-2.5 font-semibold text-slate-800">{item.unit_name}</td>
+                                <td className="px-4 py-2.5">
+                                  {item.canonical_name ? (
+                                    <span className="font-bold text-[#005F3E] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                      {item.canonical_name}
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[10.5px] font-semibold">
+                                      Chưa phân loại
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 font-medium text-slate-900">"{item.proposal_name}"</td>
+                                <td className="px-4 py-2.5 text-slate-600">{item.target_audience || '—'}</td>
+                                <td className="px-3 py-2.5 text-right font-mono font-bold text-[#A81D22]">
+                                  {Number(item.participant_count || 0).toLocaleString('vi-VN')}
+                                </td>
+                                <td className="px-3 py-2.5 text-center text-slate-600">{item.expected_duration || '—'}</td>
+                                <td className="px-4 py-2.5 text-slate-600">{item.notes || '—'}</td>
+                              </tr>
+                            ));
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* MODAL TẠO CHUYÊN ĐỀ CHUẨN MỚI */}
+          {/* ============================================================== */}
+          {showCreateCanonModal && (
+            <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                <form onSubmit={handleCreateCanonical}>
+                  <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-[#005F3E]" />
+                      <span>Tạo Chuyên Đề Chuẩn Hóa Mới</span>
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateCanonModal(false)}
+                      className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="p-6 space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                        Tên Chuyên Đề Chuẩn Hóa <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ví dụ: Kỹ năng giao tiếp khách hàng"
+                        value={newCanonName}
+                        onChange={(e) => setNewCanonName(e.target.value)}
+                        required
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Tên chuẩn này sẽ đại diện cho các đề xuất tương đương của các đơn vị khi báo cáo tổng hợp.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                        Mô tả / Nhóm đối tượng dự kiến (Tùy chọn)
+                      </label>
+                      <textarea
+                        rows={3}
+                        placeholder="Mô tả phạm vi hoặc đối tượng đào tạo của chuyên đề..."
+                        value={newCanonDesc}
+                        onChange={(e) => setNewCanonDesc(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCreateCanonModal(false)}
+                      disabled={canonActionLoading}
+                      className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      Hủy bỏ
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={canonActionLoading || !newCanonName.trim()}
+                      className="px-5 py-2 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {canonActionLoading ? 'Đang tạo...' : 'Tạo Chuyên Đề Chuẩn'}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
         </div>

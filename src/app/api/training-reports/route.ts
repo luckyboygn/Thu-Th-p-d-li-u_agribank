@@ -974,13 +974,15 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 7. BÁO CÁO ĐỀ XUẤT NHU CẦU ĐÀO TẠO NGOÀI KHUNG (MỤC 2.8)
+  // 7. BÁO CÁO ĐỀ XUẤT NHU CẦU ĐÀO TẠO NGOÀI KHUNG (MẪU 06 & CHUẨN HÓA CANONICAL)
   if (type === 'PROPOSALS') {
     const proposalsList = db.prepare(`
-      SELECT p.*, ds.unit_id, u.unit_code, u.unit_name
+      SELECT p.*, ds.unit_id, u.unit_code, u.unit_name,
+             c.name as canonical_name, c.description as canonical_description
       FROM training_demand_proposals p
       JOIN training_demand_submissions ds ON p.submission_id = ds.id
       JOIN units u ON ds.unit_id = u.id
+      LEFT JOIN training_proposal_canonical c ON p.canonical_id = c.id
       WHERE ds.collection_id = ?
       ORDER BY p.id DESC
     `).all(collectionId) as any[];
@@ -988,44 +990,126 @@ export async function GET(req: NextRequest) {
     const totalParticipants = proposalsList.reduce((s, p) => s + (p.participant_count || 0), 0);
     const uniqueUnitsCount = new Set(proposalsList.map(p => p.unit_id)).size;
 
+    // Gom nhóm theo Canonical (Mục chưa ánh xạ gom thành nhóm 'Chưa phân loại' kèm số lượng, không bị bỏ khỏi tổng)
+    interface CanonicalGroupItem {
+      canonicalId: number | null;
+      canonicalName: string;
+      description?: string;
+      isMapped: boolean;
+      totalParticipants: number;
+      unitCount: number;
+      units: Array<{ unitCode: string; unitName: string }>;
+      proposalCount: number;
+      variations: string[];
+      proposals: any[];
+    }
+
+    const groupsMap = new Map<string, CanonicalGroupItem>();
+
+    // Khởi tạo nhóm Chưa phân loại
+    const unmappedKey = '__UNMAPPED__';
+
+    for (const p of proposalsList) {
+      const key = p.canonical_id ? `CANON_${p.canonical_id}` : unmappedKey;
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, {
+          canonicalId: p.canonical_id || null,
+          canonicalName: p.canonical_id ? p.canonical_name : 'Chưa phân loại',
+          description: p.canonical_description || undefined,
+          isMapped: Boolean(p.canonical_id),
+          totalParticipants: 0,
+          unitCount: 0,
+          units: [],
+          proposalCount: 0,
+          variations: [],
+          proposals: []
+        });
+      }
+
+      const g = groupsMap.get(key)!;
+      g.totalParticipants += (p.participant_count || 0);
+      g.proposalCount++;
+      g.proposals.push(p);
+
+      if (!g.variations.includes(p.proposal_name)) {
+        g.variations.push(p.proposal_name);
+      }
+      if (!g.units.some(u => u.unitCode === p.unit_code)) {
+        g.units.push({ unitCode: p.unit_code, unitName: p.unit_name });
+      }
+      g.unitCount = g.units.length;
+    }
+
+    // Sắp xếp các nhóm: Các nhóm đã chuẩn hóa có nhiều học viên lên đầu, nhóm 'Chưa phân loại' ở cuối
+    const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => {
+      if (a.isMapped && !b.isMapped) return -1;
+      if (!a.isMapped && b.isMapped) return 1;
+      return b.totalParticipants - a.totalParticipants;
+    });
+
+    const mappedParticipants = sortedGroups.filter(g => g.isMapped).reduce((s, g) => s + g.totalParticipants, 0);
+    const unmappedParticipants = sortedGroups.filter(g => !g.isMapped).reduce((s, g) => s + g.totalParticipants, 0);
+
     return NextResponse.json({
       collectionId,
       totalProposals: proposalsList.length,
       totalParticipants,
       uniqueUnitsCount,
+      mappedParticipants,
+      unmappedParticipants,
+      canonicalGroups: sortedGroups,
       proposals: proposalsList
     });
   }
 
-  // 8. XUẤT EXCEL ĐỀ XUẤT NHU CẦU ĐÀO TẠO NGOÀI KHUNG (MỤC 2.8)
+  // 8. XUẤT EXCEL ĐỀ XUẤT NHU CẦU ĐÀO TẠO NGOÀI KHUNG (GỒM CỘT CANONICAL VÀ TÊN GỐC)
   if (type === 'EXPORT_PROPOSALS') {
     const proposalsList = db.prepare(`
-      SELECT p.*, ds.unit_id, u.unit_code, u.unit_name
+      SELECT p.*, ds.unit_id, u.unit_code, u.unit_name,
+             c.name as canonical_name
       FROM training_demand_proposals p
       JOIN training_demand_submissions ds ON p.submission_id = ds.id
       JOIN units u ON ds.unit_id = u.id
+      LEFT JOIN training_proposal_canonical c ON p.canonical_id = c.id
       WHERE ds.collection_id = ?
-      ORDER BY p.id DESC
+      ORDER BY COALESCE(c.name, 'zzz'), p.id DESC
     `).all(collectionId) as any[];
 
     const exportRows = proposalsList.map((p, idx) => ({
       'STT': idx + 1,
+      'Chuyên đề chuẩn hóa (Canonical)': p.canonical_name || 'Chưa phân loại',
       'Mã Đơn vị': p.unit_code,
       'Tên Đơn vị': p.unit_name,
-      'Tên Chương trình / Chuyên đề đề xuất': p.proposal_name,
+      'Tên đề xuất gốc của đơn vị': p.proposal_name,
       'Đối tượng tham gia': p.target_audience || '',
       'Số lượng người có nhu cầu': p.participant_count || 1,
       'Thời lượng dự kiến': p.expected_duration || '',
-      'Ghi chú / Mục tiêu đào tạo': p.notes || '',
+      'Hình thức đào tạo': p.delivery_method || '',
+      'Nguồn giảng viên / câu hỏi': p.faculty_source || '',
+      'Ghi chú / Kiến nghị': p.notes || '',
       'Thời gian đề xuất': p.created_at ? new Date(p.created_at).toLocaleString('vi-VN') : ''
     }));
 
     const wb = xlsx.utils.book_new();
     const ws = xlsx.utils.json_to_sheet(exportRows);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 35 },
+      { wch: 12 },
+      { wch: 32 },
+      { wch: 40 },
+      { wch: 30 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 20 },
+      { wch: 28 },
+      { wch: 35 },
+      { wch: 20 }
+    ];
     xlsx.utils.book_append_sheet(wb, ws, 'De_Xuat_Ngoai_Khung');
 
     const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const filename = `De_xuat_ngoai_khung_toan_he_thong.xlsx`;
+    const filename = `Tong_hop_de_xuat_ngoai_khung_M06.xlsx`;
 
     return new NextResponse(buf, {
       headers: {
