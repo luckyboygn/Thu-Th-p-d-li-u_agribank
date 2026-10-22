@@ -79,7 +79,7 @@ export async function POST(
     // 2. Cập nhật từng dòng trong exam_records
     const updateRecordStmt = db.prepare(`
       UPDATE exam_records
-      SET validation_status = ?, validation_message = ?
+      SET validation_status = ?, validation_message = ?, employee_id = ?, unit_code_at_validation = ?
       WHERE upload_id = ? AND row_index = ?
     `);
 
@@ -96,7 +96,7 @@ export async function POST(
     valResult.records.forEach(rec => {
       const recId = rowIndexToRecordId.get(rec.rowIndex);
       const valMsg = rec.errors.length > 0 ? rec.errors.map(e => e.errorMessage).join('; ') : 'Hợp lệ';
-      updateRecordStmt.run(rec.status, valMsg, uploadId, rec.rowIndex);
+      updateRecordStmt.run(rec.status, valMsg, rec.employeeId || null, rec.unitCodeAtValidation || null, uploadId, rec.rowIndex);
 
       rec.errors.forEach(err => {
         insertErrorStmt.run(

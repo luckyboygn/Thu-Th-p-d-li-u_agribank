@@ -345,8 +345,8 @@ export async function POST(req: NextRequest) {
       const insertRecordStmt = db.prepare(`
         INSERT INTO exam_records (
           upload_id, exam_id, unit_id, row_index, employee_code, elearning_account, full_name,
-          sheet_name, raw_data, validation_status, validation_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          sheet_name, employee_id, unit_code_at_validation, raw_data, validation_status, validation_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const insertErrorStmt = db.prepare(`
@@ -366,6 +366,8 @@ export async function POST(req: NextRequest) {
           rec.elearningAccount,
           rec.fullName || null,
           rec.sheetName || 'Sheet1',
+          rec.employeeId || null,
+          rec.unitCodeAtValidation || null,
           JSON.stringify(rec.rawData), // BẢO TOÀN 100% CÁC CỘT EXCEL
           rec.status,
           errorMsg || null

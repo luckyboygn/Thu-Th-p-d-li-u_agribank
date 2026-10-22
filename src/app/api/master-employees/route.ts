@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { normalizeEmployeeCode, normalizeElearning, normalizeFullName } from '@/lib/normalization';
 import * as xlsx from 'xlsx';
 
 export async function GET(req: NextRequest) {
@@ -104,9 +105,9 @@ export async function POST(req: NextRequest) {
     const validItems: Array<{ code: string; elearn: string; name: string; unit: string; raw: any }> = [];
 
     rows.forEach((r, idx) => {
-      const code = String(r[codeKey] || '').trim();
-      const elearn = String(r[elearnKey] || '').trim().toLowerCase();
-      const name = nameKey ? String(r[nameKey] || '').trim() : '';
+      const code = normalizeEmployeeCode(r[codeKey]);
+      const elearn = normalizeElearning(r[elearnKey]);
+      const name = nameKey ? normalizeFullName(r[nameKey]) : '';
       const unit = unitKey ? String(r[unitKey] || '').trim() : '';
 
       if (!code || !elearn) return;

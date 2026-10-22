@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { normalizeEmployeeCode, normalizeElearning, normalizeFullName } from '@/lib/normalization';
 
 // 1. GET: Lấy danh sách yêu cầu bổ sung cán bộ
 // - Đơn vị: Chỉ lấy yêu cầu của đơn vị mình (session.unitId)
@@ -89,9 +90,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const trimmedCode = String(employeeCode).trim();
-    const trimmedElearning = String(elearningAccount).trim();
-    const trimmedName = String(fullName).trim();
+    const trimmedCode = normalizeEmployeeCode(employeeCode);
+    const trimmedElearning = normalizeElearning(elearningAccount);
+    const trimmedName = normalizeFullName(fullName);
     const trimmedReason = String(reason).trim();
     const trimmedPos = position ? String(position).trim() : '';
 

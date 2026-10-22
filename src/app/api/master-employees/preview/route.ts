@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
+import { normalizeEmployeeCode, normalizeElearning, normalizeFullName } from '@/lib/normalization';
 import * as xlsx from 'xlsx';
 
 export async function POST(req: NextRequest) {
@@ -49,9 +50,9 @@ export async function POST(req: NextRequest) {
     const fileMap = new Map<string, { code: string; elearn: string; name: string; unit: string; raw: any }>();
 
     rows.forEach((r, idx) => {
-      const code = String(r[codeKey] || '').trim();
-      const elearn = String(r[elearnKey] || '').trim().toLowerCase();
-      const name = nameKey ? String(r[nameKey] || '').trim() : '';
+      const code = normalizeEmployeeCode(r[codeKey]);
+      const elearn = normalizeElearning(r[elearnKey]);
+      const name = nameKey ? normalizeFullName(r[nameKey]) : '';
       const unit = unitKey ? String(r[unitKey] || '').trim() : '';
 
       if (!code || !elearn) return;
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
     const existingEmployees = db.prepare('SELECT id, employee_code, elearning_account, full_name, unit_code, unit_name, status FROM employees').all() as any[];
     const dbMap = new Map<string, any>();
     existingEmployees.forEach(emp => {
-      dbMap.set(emp.employee_code, emp);
+      dbMap.set(normalizeEmployeeCode(emp.employee_code), emp);
     });
 
     const toCreate: any[] = [];

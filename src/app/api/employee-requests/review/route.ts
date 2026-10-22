@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest, enforcePasswordPolicy } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { normalizeEmployeeCode, normalizeElearning, normalizeFullName } from '@/lib/normalization';
 
 export async function POST(req: NextRequest) {
   const session = getSessionFromRequest(req);
@@ -83,10 +84,14 @@ export async function POST(req: NextRequest) {
     // Hành động APPROVE: Kiểm tra trùng lặp trong bảng employees và thêm mới
     db.exec('BEGIN TRANSACTION;');
     try {
+      const normCode = normalizeEmployeeCode(request.employee_code);
+      const normElearn = normalizeElearning(request.elearning_account);
+      const normName = normalizeFullName(request.full_name);
+
       const existingEmp = db.prepare(`
         SELECT id, employee_code, elearning_account FROM employees
-        WHERE employee_code = ? OR elearning_account = ?
-      `).get(request.employee_code, request.elearning_account) as any;
+        WHERE employee_code = ? OR LOWER(elearning_account) = LOWER(?)
+      `).get(normCode, normElearn) as any;
 
       if (existingEmp) {
         // Cán bộ đã có trong DB
@@ -102,9 +107,9 @@ export async function POST(req: NextRequest) {
             employee_code, elearning_account, full_name, unit_code, position
           ) VALUES (?, ?, ?, ?, ?)
         `).run(
-          request.employee_code,
-          request.elearning_account,
-          request.full_name,
+          normCode,
+          normElearn,
+          normName,
           request.unit_code,
           request.position || ''
         );

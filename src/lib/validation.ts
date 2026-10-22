@@ -1,5 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { ParsedRowData } from './excel';
+import { 
+  normalizeEmployeeCode, 
+  normalizeElearning, 
+  normalizeNameForComparison, 
+  stripLeadingZeros 
+} from './normalization';
 
 export interface ValidationErrorItem {
   rowIndex: number;
@@ -16,7 +22,9 @@ export interface ValidationErrorItem {
     | 'UNKNOWN_EMPLOYEE_CODE'
     | 'UNKNOWN_ELEARNING'
     | 'UNIT_MISMATCH'
-    | 'INACTIVE_EMPLOYEE';
+    | 'INACTIVE_EMPLOYEE'
+    | 'NAME_MISMATCH'
+    | 'LEADING_ZERO_NORMALIZED';
   errorMessage: string;
   severity?: 'ERROR' | 'WARNING';
   sheetName?: string;
@@ -28,6 +36,8 @@ export interface ValidationRecordResult {
   elearningAccount: string;
   fullName: string;
   sheetName?: string;
+  employeeId?: number | null;
+  unitCodeAtValidation?: string | null;
   rawData: Record<string, any>;
   status: 'VALID' | 'INVALID';
   errors: ValidationErrorItem[];
@@ -54,7 +64,7 @@ interface MasterEmployeeRow {
 
 /**
  * Thuật toán Đối chiếu 2 chiều (Bidirectional Validation Engine)
- * Đảm bảo phát hiện chính xác tất cả 10 CASE theo yêu cầu nghiệp vụ
+ * Đảm bảo phát hiện chính xác tất cả các ca theo yêu cầu nghiệp vụ
  */
 export function validateCandidateBatch(
   db: DatabaseSync,
@@ -74,14 +84,43 @@ export function validateCandidateBatch(
   } catch (e) {}
 
   // ==========================================
-  // BƯỚC 1 & 2: KIỂM TRA TRÙNG LẶP TRONG CHÍNH FILE EXCEL
+  // BƯỚC 1: TẢI DANH MỤC MASTER VÀ KIỂM TRA XUNG ĐỘT SỐ 0 ĐẦU
   // ==========================================
-  const seenCodes = new Map<string, number[]>(); // code -> [rowIndices]
-  const seenElearns = new Map<string, number[]>(); // elearn -> [rowIndices]
+  const allMasterEmployees = db.prepare(`
+    SELECT id, employee_code, elearning_account, full_name, unit_code, unit_name, status
+    FROM employees
+  `).all() as unknown as MasterEmployeeRow[];
+
+  const masterByCode = new Map<string, MasterEmployeeRow>();
+  const masterByElearn = new Map<string, MasterEmployeeRow>();
+  const masterByStrippedCode = new Map<string, MasterEmployeeRow[]>();
+
+  for (const emp of allMasterEmployees) {
+    const normCode = normalizeEmployeeCode(emp.employee_code);
+    const normElearn = normalizeElearning(emp.elearning_account);
+
+    if (normCode) {
+      masterByCode.set(normCode, emp);
+      const stripped = stripLeadingZeros(normCode);
+      if (!masterByStrippedCode.has(stripped)) {
+        masterByStrippedCode.set(stripped, []);
+      }
+      masterByStrippedCode.get(stripped)!.push(emp);
+    }
+    if (normElearn) {
+      masterByElearn.set(normElearn, emp);
+    }
+  }
+
+  // ==========================================
+  // BƯỚC 2: KIỂM TRA TRÙNG LẶP TRONG CHÍNH FILE EXCEL (SAU CHUẨN HÓA)
+  // ==========================================
+  const seenCodes = new Map<string, number[]>(); // normalizedCode -> [rowIndices]
+  const seenElearns = new Map<string, number[]>(); // normalizedElearn -> [rowIndices]
 
   for (const r of rows) {
-    const code = r.employeeCode.trim();
-    const elearn = r.elearningAccount.trim().toLowerCase();
+    const code = normalizeEmployeeCode(r.employeeCode);
+    const elearn = normalizeElearning(r.elearningAccount);
 
     if (code) {
       if (!seenCodes.has(code)) seenCodes.set(code, []);
@@ -93,55 +132,48 @@ export function validateCandidateBatch(
     }
   }
 
-  // Chuẩn bị statements truy vấn database trung tâm
-  const findByCodeStmt = db.prepare(`
-    SELECT id, employee_code, elearning_account, full_name, unit_code, unit_name, status
-    FROM employees
-    WHERE employee_code = ?
-  `);
-
-  const findByElearnStmt = db.prepare(`
-    SELECT id, employee_code, elearning_account, full_name, unit_code, unit_name, status
-    FROM employees
-    WHERE LOWER(elearning_account) = LOWER(?)
-  `);
-
   // ==========================================
   // BƯỚC 3: ĐỐI CHIẾU TỪNG DÒNG VỚI DATABASE TRUNG TÂM (HAI CHIỀU)
   // ==========================================
   for (const r of rows) {
     const rowErrors: ValidationErrorItem[] = [];
-    const code = r.employeeCode.trim();
-    const elearn = r.elearningAccount.trim().toLowerCase();
+    const code = normalizeEmployeeCode(r.employeeCode);
+    const elearn = normalizeElearning(r.elearningAccount);
+
+    let matchedEmployeeId: number | null = null;
+    let matchedUnitCode: string | null = null;
 
     // 1. Kiểm tra thiếu trường bắt buộc
     if (!code || !elearn) {
       if (!code && !elearn) {
         rowErrors.push({
           rowIndex: r.rowIndex,
-          employeeCode: code,
-          elearningAccount: elearn,
+          employeeCode: r.employeeCode,
+          elearningAccount: r.elearningAccount,
           errorType: 'MISSING_REQUIRED_FIELD',
           errorMessage: 'Thiếu cả Mã cán bộ và Tài khoản eLearning trên dòng kê khai.',
-          severity: 'ERROR'
+          severity: 'ERROR',
+          sheetName: r.sheetName
         });
       } else if (!code) {
         rowErrors.push({
           rowIndex: r.rowIndex,
-          employeeCode: code,
+          employeeCode: r.employeeCode,
           elearningAccount: elearn,
           errorType: 'MISSING_REQUIRED_FIELD',
           errorMessage: 'Thiếu Mã cán bộ trên dòng kê khai.',
-          severity: 'ERROR'
+          severity: 'ERROR',
+          sheetName: r.sheetName
         });
       } else {
         rowErrors.push({
           rowIndex: r.rowIndex,
           employeeCode: code,
-          elearningAccount: elearn,
+          elearningAccount: r.elearningAccount,
           errorType: 'MISSING_REQUIRED_FIELD',
           errorMessage: 'Thiếu Tài khoản eLearning trên dòng kê khai.',
-          severity: 'ERROR'
+          severity: 'ERROR',
+          sheetName: r.sheetName
         });
       }
     }
@@ -155,7 +187,8 @@ export function validateCandidateBatch(
         elearningAccount: elearn,
         errorType: 'DUPLICATE_EMPLOYEE_CODE_IN_FILE',
         errorMessage: `LỖI – Mã cán bộ ${code} xuất hiện nhiều lần trong file (trùng với dòng: ${otherRows.join(', ')}).`,
-        severity: 'ERROR'
+        severity: 'ERROR',
+        sheetName: r.sheetName
       });
     }
 
@@ -167,14 +200,30 @@ export function validateCandidateBatch(
         elearningAccount: elearn,
         errorType: 'DUPLICATE_ELEARNING_IN_FILE',
         errorMessage: `LỖI – Tài khoản eLearning ${elearn} xuất hiện nhiều lần trong file (trùng với dòng: ${otherRows.join(', ')}).`,
-        severity: 'ERROR'
+        severity: 'ERROR',
+        sheetName: r.sheetName
       });
     }
 
     // 3. ĐỐI CHIẾU 2 CHIỀU VỚI DATABASE TRUNG TÂM
     if (code && elearn) {
-      const recordByCode = findByCodeStmt.get(code) as unknown as MasterEmployeeRow | undefined;
-      const recordByElearn = findByElearnStmt.get(elearn) as unknown as MasterEmployeeRow | undefined;
+      // 3.1 Tìm theo Mã cán bộ: Trước tiên tìm khớp tuyệt đối
+      let recordByCode = masterByCode.get(code);
+      let matchedByLeadingZero = false;
+
+      // Nếu không khớp mã trực tiếp, kiểm tra khớp qua chuẩn hóa bỏ số 0 đầu
+      if (!recordByCode) {
+        const stripped = stripLeadingZeros(code);
+        const candidates = masterByStrippedCode.get(stripped) || [];
+        // Điều kiện an toàn: Master không có hai mã chỉ khác nhau ở số 0 đầu
+        if (candidates.length === 1) {
+          recordByCode = candidates[0];
+          matchedByLeadingZero = true;
+        }
+      }
+
+      // 3.2 Tìm theo Tài khoản eLearning
+      const recordByElearn = masterByElearn.get(elearn);
 
       if (!recordByCode && !recordByElearn) {
         // CASE 7: Cả hai đều không tồn tại trong Database
@@ -184,7 +233,8 @@ export function validateCandidateBatch(
           elearningAccount: elearn,
           errorType: 'UNKNOWN_BOTH',
           errorMessage: `LỖI – Không tìm thấy cả Mã cán bộ (${code}) và tài khoản eLearning (${elearn}) trong Database.`,
-          severity: 'ERROR'
+          severity: 'ERROR',
+          sheetName: r.sheetName
         });
       } else if (recordByCode && !recordByElearn) {
         // CASE 2: Mã cán bộ tồn tại, nhưng eLearning không tồn tại trong DB (hoặc sai)
@@ -199,7 +249,8 @@ export function validateCandidateBatch(
           elearningAccount: elearn,
           errorType: 'WRONG_ELEARNING',
           errorMessage: msg,
-          severity: 'ERROR'
+          severity: 'ERROR',
+          sheetName: r.sheetName
         });
       } else if (!recordByCode && recordByElearn) {
         // CASE 3: Tài khoản eLearning tồn tại, nhưng Mã cán bộ sai / không tồn tại
@@ -214,12 +265,46 @@ export function validateCandidateBatch(
           elearningAccount: elearn,
           errorType: 'WRONG_EMPLOYEE_CODE',
           errorMessage: msg,
-          severity: 'ERROR'
+          severity: 'ERROR',
+          sheetName: r.sheetName
         });
       } else if (recordByCode && recordByElearn) {
         // Cả hai đều tồn tại trong DB, kiểm tra xem có thuộc cùng một người không
         if (recordByCode.id === recordByElearn.id) {
           // CASE 1: HỢP LỆ VỀ MẶT ĐỐI CHIẾU 2 CHIỀU
+          matchedEmployeeId = recordByCode.id;
+          matchedUnitCode = recordByCode.unit_code || null;
+
+          // Cảnh báo nếu khớp nhờ chuẩn hóa số 0 đầu
+          if (matchedByLeadingZero) {
+            rowErrors.push({
+              rowIndex: r.rowIndex,
+              employeeCode: code,
+              elearningAccount: elearn,
+              errorType: 'LEADING_ZERO_NORMALIZED',
+              errorMessage: `Cảnh báo: Mã cán bộ [${code}] khớp với cán bộ [${recordByCode.full_name}] (Mã CSDL: [${recordByCode.employee_code}]) nhờ chuẩn hóa số 0 đầu.`,
+              severity: 'WARNING',
+              sheetName: r.sheetName
+            });
+          }
+
+          // Đối chiếu Họ và tên (không dấu, chữ thường, bỏ khoảng trắng thừa)
+          if (r.fullName && String(r.fullName).trim() !== '' && recordByCode.full_name) {
+            const inputNameNorm = normalizeNameForComparison(r.fullName);
+            const masterNameNorm = normalizeNameForComparison(recordByCode.full_name);
+            if (inputNameNorm && masterNameNorm && inputNameNorm !== masterNameNorm) {
+              rowErrors.push({
+                rowIndex: r.rowIndex,
+                employeeCode: code,
+                elearningAccount: elearn,
+                errorType: 'NAME_MISMATCH',
+                errorMessage: `Cảnh báo: Họ và tên kê khai ("${r.fullName}") khác với Họ và tên trong CSDL Cán bộ ("${recordByCode.full_name}").`,
+                severity: 'WARNING',
+                sheetName: r.sheetName
+              });
+            }
+          }
+
           // Kiểm tra xem cán bộ có ở trạng thái ngừng hoạt động không
           if (recordByCode.status === 'INACTIVE') {
             rowErrors.push({
@@ -228,7 +313,8 @@ export function validateCandidateBatch(
               elearningAccount: elearn,
               errorType: 'INACTIVE_EMPLOYEE',
               errorMessage: `Cán bộ ${recordByCode.full_name} (${code}) đã ở trạng thái ngừng hoạt động trong cơ sở dữ liệu toàn hàng.`,
-              severity: inactiveSeverity
+              severity: inactiveSeverity,
+              sheetName: r.sheetName
             });
           }
 
@@ -241,7 +327,8 @@ export function validateCandidateBatch(
               elearningAccount: elearn,
               errorType: 'UNIT_MISMATCH',
               errorMessage: `Cảnh báo: Cán bộ thuộc đơn vị khác trong hệ thống (Đơn vị trong CSDL: ${unitDisplay}).`,
-              severity: 'WARNING'
+              severity: 'WARNING',
+              sheetName: r.sheetName
             });
           }
         } else {
@@ -261,7 +348,8 @@ export function validateCandidateBatch(
             elearningAccount: elearn,
             errorType: 'CROSS_PERSON_MISMATCH',
             errorMessage: msg,
-            severity: 'ERROR'
+            severity: 'ERROR',
+            sheetName: r.sheetName
           });
         }
       }
@@ -273,10 +361,12 @@ export function validateCandidateBatch(
 
     recordsResult.push({
       rowIndex: r.rowIndex,
-      employeeCode: code,
-      elearningAccount: elearn,
+      employeeCode: code || r.employeeCode,
+      elearningAccount: elearn || r.elearningAccount,
       fullName: r.fullName,
       sheetName: r.sheetName,
+      employeeId: matchedEmployeeId,
+      unitCodeAtValidation: matchedUnitCode,
       rawData: r.rawData,
       status: isRecordValid ? 'VALID' : 'INVALID',
       errors: rowErrors
@@ -293,7 +383,7 @@ export function validateCandidateBatch(
   const warningCount = recordsResult.filter(r => r.status === 'VALID' && r.errors.length > 0).length;
 
   return {
-    totalRows: recordsResult.length,
+    totalRows: rows.length,
     validRows: validCount,
     errorRows: errorCount,
     warningRows: warningCount,

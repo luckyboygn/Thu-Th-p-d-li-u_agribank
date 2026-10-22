@@ -64,6 +64,18 @@ export const ERROR_LABELS: Record<string, ErrorDefinition> = {
     description: 'Cán bộ đã ở trạng thái ngừng hoạt động (INACTIVE) trong cơ sở dữ liệu toàn hàng.',
     severity: 'warning',
     badgeClass: 'bg-orange-50 text-orange-800 border-orange-300'
+  },
+  NAME_MISMATCH: {
+    label: 'Họ và tên khác hồ sơ gốc',
+    description: 'Họ và tên kê khai có sự sai khác với họ và tên trong CSDL Cán bộ (Hệ thống vẫn nhận diện theo Mã cán bộ & eLearning).',
+    severity: 'warning',
+    badgeClass: 'bg-blue-50 text-blue-700 border-blue-200'
+  },
+  LEADING_ZERO_NORMALIZED: {
+    label: 'Khớp nhờ chuẩn hóa số 0 đầu',
+    description: 'Mã cán bộ khớp với hồ sơ cán bộ gốc trong CSDL nhờ xử lý chuẩn hóa số 0 ở đầu mã.',
+    severity: 'warning',
+    badgeClass: 'bg-teal-50 text-teal-700 border-teal-200'
   }
 };
 
