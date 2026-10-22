@@ -279,7 +279,8 @@ function UnitDashboardContent() {
         const queryParams = new URLSearchParams();
         if (resolvedExamId) queryParams.set('examId', String(resolvedExamId));
         if (catFilter !== 'ALL') queryParams.set('formFilter', catFilter);
-        const adminRes = await fetch(`/api/dashboard/admin?${queryParams.toString()}`);
+        queryParams.set('_t', String(Date.now()));
+        const adminRes = await fetch(`/api/dashboard/admin?${queryParams.toString()}`, { cache: 'no-store' });
         if (adminRes.ok) {
           const adminData = await adminRes.json();
           setAdminSummary(adminData.summary);

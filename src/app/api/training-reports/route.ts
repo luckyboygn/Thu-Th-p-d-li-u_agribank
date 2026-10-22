@@ -82,7 +82,14 @@ export async function GET(req: NextRequest) {
       WHERE ds.collection_id = ?
     `).get(collectionId) as any).s;
 
-    const totalParticipants = progSum + posSum;
+    const propSum = (db.prepare(`
+      SELECT COALESCE(SUM(dp.participant_count), 0) as s
+      FROM training_demand_proposals dp
+      JOIN training_demand_submissions ds ON dp.submission_id = ds.id
+      WHERE ds.collection_id = ?
+    `).get(collectionId) as any).s;
+
+    const totalParticipants = progSum + posSum + propSum;
 
     // Số chương trình đã được các đơn vị lựa chọn
     const totalProgramsDeclared = (db.prepare(`

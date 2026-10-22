@@ -3,6 +3,9 @@ import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // GET: Lấy danh sách đơn vị (hỗ trợ tìm kiếm, lọc trạng thái, phân loại, vùng miền)
 export async function GET(req: NextRequest) {
   const session = getSessionFromRequest(req);
