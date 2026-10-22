@@ -13,6 +13,17 @@ export function normalizeUnitCode(raw: any): string {
   return str.trim().toUpperCase();
 }
 
+export interface UnitRecord {
+  id: number;
+  unit_code: string;
+  unit_name: string;
+  user_account?: string | null;
+  status: string;
+  unit_type?: string;
+  region?: string;
+  parent_unit_id?: number | null;
+}
+
 /**
  * Tập các loại đơn vị tham gia nộp bài / khảo sát thực tế (Theo quyết định nghiệp vụ: Bao gồm toàn bộ các loại đơn vị)
  */

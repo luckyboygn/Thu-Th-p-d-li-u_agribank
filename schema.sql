@@ -176,6 +176,7 @@ CREATE INDEX IF NOT EXISTS idx_emp_code ON employees(employee_code);
 CREATE INDEX IF NOT EXISTS idx_emp_elearn ON employees(elearning_account);
 CREATE INDEX IF NOT EXISTS idx_emp_unit ON employees(unit_code);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_exam_uploads_exam_unit_ver ON exam_uploads(exam_id, unit_id, version);
 CREATE INDEX IF NOT EXISTS idx_uploads_unit_exam ON exam_uploads(unit_id, exam_id);
 CREATE INDEX IF NOT EXISTS idx_records_upload ON exam_records(upload_id);
 CREATE INDEX IF NOT EXISTS idx_records_emp_code ON exam_records(employee_code);
@@ -452,7 +453,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unit ON notifications(recipient_uni
 CREATE INDEX IF NOT EXISTS idx_notifications_role ON notifications(recipient_role);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
 CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at);
-CREATE INDEX IF NOT EXISTS idx_demand_sub_unit_coll ON training_demand_submissions(collection_id, unit_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_training_submissions_coll_unit ON training_demand_submissions(collection_id, unit_id);
 CREATE INDEX IF NOT EXISTS idx_demand_pos_sub ON training_demand_positions(submission_id);
 CREATE INDEX IF NOT EXISTS idx_demand_top_pos ON training_demand_topics(demand_position_id);
 CREATE INDEX IF NOT EXISTS idx_demand_top_top ON training_demand_topics(topic_id);

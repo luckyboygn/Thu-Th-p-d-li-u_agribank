@@ -160,6 +160,16 @@ function runSchemaMigrations(db: DatabaseSync): void {
   } catch (e: any) {
     console.warn('[DB Migration] Cảnh báo migration system_settings:', e.message);
   }
+
+  // 12. P6 Migration: Đảm bảo ràng buộc UNIQUE chống trùng lặp dữ liệu (Single Source of Truth)
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_training_submissions_coll_unit ON training_demand_submissions(collection_id, unit_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_exam_uploads_exam_unit_ver ON exam_uploads(exam_id, unit_id, version);
+    `);
+  } catch (e: any) {
+    console.warn('[DB Migration] Cảnh báo tạo unique index P6:', e.message);
+  }
 }
 
 export function getDatabase(): DatabaseSync {

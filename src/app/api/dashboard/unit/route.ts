@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
+import { calculateSubmissionParticipantsDetailed } from '@/lib/aggregation';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -79,6 +80,22 @@ export async function GET(req: NextRequest) {
     WHERE exam_id = ? AND unit_id = ?
     ORDER BY version DESC LIMIT 1
   `).get(examId, unitId) as any : null;
+
+  // Tự động kiểm tra và chuẩn hóa số lượng bản ghi chính xác từ exam_records (Single Source of Truth)
+  if (latestUpload) {
+    const recCounts = db.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN validation_status = 'VALID' THEN 1 ELSE 0 END) as valid,
+        SUM(CASE WHEN validation_status = 'INVALID' THEN 1 ELSE 0 END) as err
+      FROM exam_records WHERE upload_id = ?
+    `).get(latestUpload.id) as any;
+    if (recCounts && recCounts.total > 0) {
+      latestUpload.total_rows = recCounts.total;
+      latestUpload.valid_rows = recCounts.valid || 0;
+      latestUpload.error_rows = recCounts.err || 0;
+    }
+  }
 
   // Lấy thông tin lý do mở lại nếu upload đang REOPENED
   let reopenInfo: any = null;
@@ -167,21 +184,15 @@ export async function GET(req: NextRequest) {
         SELECT COUNT(*) as c FROM training_demand_programs WHERE submission_id = ?
       `).get(trainingSubmission.id) as any)?.c || 0;
 
-      const progSum = (db.prepare(`
-        SELECT COALESCE(SUM(dt.participant_count), 0) as s
-        FROM training_demand_program_topics dt
-        JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-        WHERE dp.submission_id = ?
-      `).get(trainingSubmission.id) as any)?.s || 0;
-
-      const propSum = (db.prepare(`
-        SELECT COALESCE(SUM(participant_count), 0) as s
-        FROM training_demand_proposals WHERE submission_id = ?
-      `).get(trainingSubmission.id) as any)?.s || 0;
+      const detailed = calculateSubmissionParticipantsDetailed(db, trainingSubmission.id);
 
       trainingSummary = {
         programCount: progCount,
-        totalParticipants: progSum + propSum
+        m04Participants: detailed.m04Participants,
+        m04Completed: detailed.m04Completed,
+        m05Participants: detailed.m05Participants,
+        m06Participants: detailed.m06Participants,
+        totalParticipants: detailed.totalParticipants
       };
     }
   }

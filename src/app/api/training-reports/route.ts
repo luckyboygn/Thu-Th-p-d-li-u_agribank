@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 import { getParticipatingUnits, PARTICIPATING_UNITS_SQL_CONDITION } from '@/lib/units';
+import { resolveActiveCollection, getTrainingDemandMetricsByUnit, calculateSubmissionParticipantsDetailed } from '@/lib/aggregation';
 import * as xlsx from 'xlsx';
 
 export const dynamic = 'force-dynamic';
@@ -23,74 +24,40 @@ export async function GET(req: NextRequest) {
 
   const db = getDatabase();
 
-  let collectionId = collectionIdStr ? parseInt(collectionIdStr) : null;
-  if (!collectionId) {
-    // Đồng bộ tuyệt đối với Dashboard Admin: Ưu tiên đợt OPEN có bài nộp, sau đó đợt có bài nộp, sau đó đợt OPEN mới nhất
-    const openWithSubs = db.prepare(`
-      SELECT c.id FROM collections c
-      WHERE c.status = 'OPEN' AND c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
-      ORDER BY c.id DESC LIMIT 1
-    `).get() as any;
-
-    if (openWithSubs?.id) {
-      collectionId = openWithSubs.id;
-    } else {
-      const anyWithSubs = db.prepare(`
-        SELECT c.id FROM collections c
-        WHERE c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
-        ORDER BY c.id DESC LIMIT 1
-      `).get() as any;
-
-      if (anyWithSubs?.id) {
-        collectionId = anyWithSubs.id;
-      } else {
-        const activeColl = db.prepare("SELECT id FROM collections WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
-        collectionId = activeColl?.id || 1;
-      }
-    }
-  }
+  const { collection } = resolveActiveCollection(db, collectionIdStr);
+  const collectionId = collection?.id || null;
 
   // 1. BÁO CÁO TỔNG HỢP TOÀN HỆ THỐNG (SUMMARY METRICS)
   if (type === 'SUMMARY') {
-    const totalUnitsCount = (db.prepare(`SELECT COUNT(*) as c FROM units WHERE ${PARTICIPATING_UNITS_SQL_CONDITION}`).get() as any).c;
+    const participatingUnits = getParticipatingUnits(db);
+    const totalUnitsCount = participatingUnits.length;
+    const trainingMetrics = collectionId ? getTrainingDemandMetricsByUnit(db, collectionId) : new Map();
 
-    const submittedCount = (db.prepare(`
-      SELECT COUNT(DISTINCT unit_id) as c 
-      FROM training_demand_submissions 
-      WHERE collection_id = ? AND status = 'SUBMITTED'
-    `).get(collectionId) as any).c;
+    let submittedCount = 0;
+    let draftCount = 0;
+    let reopenedCount = 0;
+    let m04TotalParticipants = 0;
+    let m04TotalCompleted = 0;
+    let m05TotalParticipants = 0;
+    let m06TotalParticipants = 0;
 
-    const draftCount = (db.prepare(`
-      SELECT COUNT(DISTINCT unit_id) as c 
-      FROM training_demand_submissions 
-      WHERE collection_id = ? AND status = 'DRAFT'
-    `).get(collectionId) as any).c;
+    for (const m of trainingMetrics.values()) {
+      m04TotalParticipants += m.m04Participants;
+      m04TotalCompleted += m.m04Completed;
+      m05TotalParticipants += m.m05Participants;
+      m06TotalParticipants += m.m06Participants;
 
-    // Tổng số lượt đăng ký người học từ cả Programs và Positions
-    const progSum = (db.prepare(`
-      SELECT COALESCE(SUM(dt.participant_count), 0) as s
-      FROM training_demand_program_topics dt
-      JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-      JOIN training_demand_submissions ds ON dp.submission_id = ds.id
-      WHERE ds.collection_id = ?
-    `).get(collectionId) as any).s;
+      if (m.status === 'SUBMITTED') {
+        submittedCount++;
+      } else if (m.status === 'REOPENED') {
+        reopenedCount++;
+        submittedCount++; // Bản nộp trước đó vẫn có hiệu lực
+      } else if (m.status === 'DRAFT') {
+        draftCount++;
+      }
+    }
 
-    const posSum = (db.prepare(`
-      SELECT COALESCE(SUM(dt.participant_count), 0) as s
-      FROM training_demand_topics dt
-      JOIN training_demand_positions dp ON dt.demand_position_id = dp.id
-      JOIN training_demand_submissions ds ON dp.submission_id = ds.id
-      WHERE ds.collection_id = ?
-    `).get(collectionId) as any).s;
-
-    const propSum = (db.prepare(`
-      SELECT COALESCE(SUM(dp.participant_count), 0) as s
-      FROM training_demand_proposals dp
-      JOIN training_demand_submissions ds ON dp.submission_id = ds.id
-      WHERE ds.collection_id = ?
-    `).get(collectionId) as any).s;
-
-    const totalParticipants = progSum + posSum + propSum;
+    const totalParticipants = m04TotalParticipants + m05TotalParticipants + m06TotalParticipants;
 
     // Số chương trình đã được các đơn vị lựa chọn
     const totalProgramsDeclared = (db.prepare(`
@@ -258,35 +225,11 @@ export async function GET(req: NextRequest) {
 
     if (unitIdStr === 'ALL') {
       const allUnits = getParticipatingUnits(db);
-      const submissions = db.prepare(`
-        SELECT ts.id, ts.unit_id, ts.status, ts.submitted_at, ts.updated_at,
-               (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
-               (SELECT COUNT(dt.id) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id AND dt.participant_count > 0) as topic_count,
-               (
-                 COALESCE((
-                   SELECT SUM(dt.participant_count)
-                   FROM training_demand_program_topics dt
-                   JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-                   WHERE dp.submission_id = ts.id
-                 ), 0) +
-                 COALESCE((
-                   SELECT SUM(participant_count)
-                   FROM training_demand_proposals
-                   WHERE submission_id = ts.id
-                 ), 0)
-               ) as total_participants
-        FROM training_demand_submissions ts
-        WHERE ts.collection_id = ? AND ts.id IN (
-          SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
-        )
-      `).all(collectionId, collectionId) as any[];
-
-      const subMap = new Map<number, any>();
-      submissions.forEach(s => subMap.set(s.unit_id, s));
+      const trainingMetrics = collectionId ? getTrainingDemandMetricsByUnit(db, collectionId) : new Map();
 
       const unitsReport = allUnits.map(u => {
-        const sub = subMap.get(u.id);
-        const totalRegistered = sub?.total_participants || 0;
+        const sub = trainingMetrics.get(u.id);
+        const totalRegistered = sub ? sub.totalParticipantsCombined : 0;
         return {
           id: u.id,
           unitId: u.id,
@@ -297,17 +240,22 @@ export async function GET(req: NextRequest) {
           region: u.region,
           unit_type: u.unit_type,
           unitType: u.unit_type,
-          submission_id: sub?.id || null,
-          submissionId: sub?.id || null,
+          submission_id: sub?.submissionId || null,
+          submissionId: sub?.submissionId || null,
           status: sub ? sub.status : 'NOT_SUBMITTED',
-          submitted_at: sub?.submitted_at || null,
-          submittedAt: sub?.submitted_at || null,
-          updated_at: sub?.updated_at || null,
-          updatedAt: sub?.updated_at || null,
-          position_count: sub?.program_count || 0,
-          programCount: sub?.program_count || 0,
-          topic_count: sub?.topic_count || 0,
-          topicCount: sub?.topic_count || 0,
+          submitted_at: sub?.submittedAt || null,
+          submittedAt: sub?.submittedAt || null,
+          updated_at: sub?.updatedAt || null,
+          updatedAt: sub?.updatedAt || null,
+          receiptCode: sub?.receiptCode || null,
+          m04Participants: sub?.m04Participants || 0,
+          m04Completed: sub?.m04Completed || 0,
+          m05Participants: sub?.m05Participants || 0,
+          m06Participants: sub?.m06Participants || 0,
+          position_count: sub?.m04TopicsCount || 0,
+          programCount: (sub?.m04TopicsCount || 0) + (sub?.m05TopicsCount || 0),
+          topic_count: (sub?.m04TopicsCount || 0) + (sub?.m05TopicsCount || 0),
+          topicCount: (sub?.m04TopicsCount || 0) + (sub?.m05TopicsCount || 0),
           total_registered: totalRegistered,
           totalParticipants: totalRegistered
         };
@@ -553,33 +501,9 @@ export async function GET(req: NextRequest) {
           ORDER BY CAST(u.unit_code AS INTEGER) ASC, u.unit_code ASC, p.display_order ASC, t.display_order ASC
         `).all(collectionId) as any[];
 
-        // 2. Sheet Tổng hợp tiến độ toàn bộ 155 đơn vị
-        const allUnits = db.prepare('SELECT id, unit_code, unit_name, region, unit_type FROM units ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC').all() as any[];
-        const submissions = db.prepare(`
-          SELECT ts.id, ts.unit_id, ts.status, ts.submitted_at,
-                 (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
-                 (SELECT COUNT(dt.id) FROM training_demand_program_topics dt JOIN training_demand_programs dp ON dt.demand_program_id = dp.id WHERE dp.submission_id = ts.id AND dt.participant_count > 0) as topic_count,
-                 (
-                 COALESCE((
-                   SELECT SUM(dt.participant_count)
-                   FROM training_demand_program_topics dt
-                   JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-                   WHERE dp.submission_id = ts.id
-                 ), 0) +
-                 COALESCE((
-                   SELECT SUM(participant_count)
-                   FROM training_demand_proposals
-                   WHERE submission_id = ts.id
-                 ), 0)
-               ) as total_participants
-          FROM training_demand_submissions ts
-          WHERE ts.collection_id = ? AND ts.id IN (
-            SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
-          )
-        `).all(collectionId, collectionId) as any[];
-
-        const subMap = new Map<number, any>();
-        submissions.forEach(s => subMap.set(s.unit_id, s));
+        // 2. Sheet Tổng hợp tiến độ toàn bộ đơn vị tham gia khảo sát (chuẩn hóa Single Source of Truth)
+        const participatingUnits = getParticipatingUnits(db);
+        const trainingMetrics = collectionId ? getTrainingDemandMetricsByUnit(db, collectionId) : new Map();
 
         const REGION_LABELS: Record<string, string> = {
           MIEN_BAC: 'Miền Bắc',
@@ -589,8 +513,8 @@ export async function GET(req: NextRequest) {
           HO: 'Trụ sở chính'
         };
 
-        const summary155Rows = allUnits.map((u, idx) => {
-          const sub = subMap.get(u.id);
+        const summary155Rows = participatingUnits.map((u, idx) => {
+          const sub = trainingMetrics.get(u.id);
           const st = sub ? (sub.status === 'SUBMITTED' ? 'ĐÃ GỬI CHÍNH THỨC' : sub.status === 'REOPENED' ? 'MỞ LẠI CHO SỬA' : 'ĐANG SOẠN THẢO') : 'CHƯA KÊ KHAI';
           return {
             'STT': idx + 1,
@@ -598,10 +522,15 @@ export async function GET(req: NextRequest) {
             'Tên đơn vị': u.unit_name,
             'Khu vực': REGION_LABELS[u.region] || u.region || '',
             'Trạng thái': st,
-            'Số chương trình đã chọn': sub?.program_count || 0,
-            'Số chuyên đề đăng ký': sub?.topic_count || 0,
-            'Tổng số người đăng ký': sub?.total_participants || 0,
-            'Thời gian gửi chính thức': sub?.submitted_at || ''
+            'Mẫu 04 - Số chuyên đề': sub?.m04TopicsCount || 0,
+            'Mẫu 04 - Lượt đăng ký': sub?.m04Participants || 0,
+            'Mẫu 04 - Lượt đã học': sub?.m04Completed || 0,
+            'Mẫu 05 - Số chuyên đề': sub?.m05TopicsCount || 0,
+            'Mẫu 05 - Lượt đăng ký': sub?.m05Participants || 0,
+            'Mẫu 06 - Số đề xuất': sub?.m06ProposalsCount || 0,
+            'Mẫu 06 - Lượt đăng ký': sub?.m06Participants || 0,
+            'Tổng số lượt đăng ký': sub?.totalParticipantsCombined || 0,
+            'Thời gian gửi chính thức': sub?.submittedAt || ''
           };
         });
 

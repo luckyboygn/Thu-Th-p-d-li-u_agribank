@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 import { getParticipatingUnits } from '@/lib/units';
+import { getSystemDashboardMetrics } from '@/lib/aggregation';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -55,90 +56,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Xác định activeCollectionId: đồng bộ hoàn toàn với /api/training-reports
-    let activeCollectionId = collectionIdParam ? parseInt(collectionIdParam) : null;
-    if (!activeCollectionId) {
-      // 1. Ưu tiên đợt có bài nộp khảo sát (OPEN trước, sau đó bất kỳ đợt nào có bài nộp)
-      const openWithSubs = db.prepare(`
-        SELECT c.id FROM collections c
-        WHERE c.status = 'OPEN' AND c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
-        ORDER BY c.id DESC LIMIT 1
-      `).get() as any;
+    // Sử dụng module tổng hợp tập trung (Single Source of Truth)
+    const sysMetrics = getSystemDashboardMetrics(db, {
+      collectionId: collectionIdParam,
+      examId: examIdParam,
+      formFilter: formFilterParam
+    });
 
-      if (openWithSubs?.id) {
-        activeCollectionId = openWithSubs.id;
-      } else {
-        const anyWithSubs = db.prepare(`
-          SELECT c.id FROM collections c
-          WHERE c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
-          ORDER BY c.id DESC LIMIT 1
-        `).get() as any;
+    const selectedCollection = sysMetrics.collection;
+    const selectedExam = sysMetrics.exam;
+    const allUnits = sysMetrics.unitRows.map(r => r.unit);
 
-        if (anyWithSubs?.id) {
-          activeCollectionId = anyWithSubs.id;
-        } else {
-          // 2. Đợt OPEN mới nhất
-          const activeColl = db.prepare("SELECT id FROM collections WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
-          activeCollectionId = activeColl?.id || (collections[0]?.id ?? 1);
-        }
-      }
-    }
-    const selectedCollection = activeCollectionId ? (collections.find(c => c.id === activeCollectionId) || null) : null;
-
-    // Xác định activeExamId:
-    let activeExamId = examIdParam ? parseInt(examIdParam) : null;
-    if (!activeExamId) {
-      if (activeCampaignTask === 'TRAINING_DEMAND' || formFilterParam === 'TRAINING_DEMAND' || activeCampaignTask !== 'CANDIDATE_EXAM') {
-        const trainExam = exams.find(e => e.task_type === 'TRAINING_DEMAND' || e.code === selectedCollection?.code || e.title === selectedCollection?.title);
-        if (trainExam) activeExamId = trainExam.id;
-      }
-      if (!activeExamId) {
-        const activeEx = exams.find(e => e.status === 'OPEN');
-        activeExamId = activeEx ? activeEx.id : (exams[0]?.id ?? null);
-      }
-    }
-    const selectedExam = activeExamId ? (exams.find(e => e.id === activeExamId) || null) : null;
-
-    // 2. Lấy danh mục Đơn vị tham gia khảo sát/nộp file chuẩn hóa (ACTIVE & đúng loại đơn vị)
-    const allUnits = getParticipatingUnits(db);
-
-    // 3. Lấy dữ liệu Nộp file Cán bộ / Kỳ thi (exam_uploads)
-    const latestUploads = activeExamId ? db.prepare(`
-      SELECT u.id, u.unit_id, u.version, u.file_name, u.total_rows, u.valid_rows, u.error_rows, u.status, u.submitted_at, u.created_at
-      FROM exam_uploads u
-      WHERE u.exam_id = ? AND u.id IN (
-        SELECT MAX(id) FROM exam_uploads WHERE exam_id = ? GROUP BY unit_id
-      )
-    `).all(activeExamId, activeExamId) as any[] : [];
-    const uploadMap = new Map<number, any>();
-    latestUploads.forEach(u => uploadMap.set(u.unit_id, u));
-
-    // 4. Lấy dữ liệu Khảo sát Nhu cầu Đào tạo (training_demand_submissions)
-    const trainingSubmissions = activeCollectionId ? db.prepare(`
-      SELECT ts.id, ts.unit_id, ts.version, ts.status, ts.submitted_at, ts.updated_at,
-             (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,
-             (
-               COALESCE((
-                 SELECT SUM(dt.participant_count)
-                 FROM training_demand_program_topics dt
-                 JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-                 WHERE dp.submission_id = ts.id
-               ), 0) +
-               COALESCE((
-                 SELECT SUM(participant_count)
-                 FROM training_demand_proposals
-                 WHERE submission_id = ts.id
-               ), 0)
-             ) as total_training_participants
-      FROM training_demand_submissions ts
-      WHERE ts.collection_id = ? AND ts.id IN (
-        SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
-      )
-    `).all(activeCollectionId, activeCollectionId) as any[] : [];
-    const trainingMap = new Map<number, any>();
-    trainingSubmissions.forEach(ts => trainingMap.set(ts.unit_id, ts));
-
-    // 5. Thống kê tổng hợp từng đơn vị
+    // Thống kê tổng hợp từng đơn vị
     let uploadedCount = 0;
     let completedCount = 0;
     let errorUnitsCount = 0;
@@ -151,17 +80,14 @@ export async function GET(req: NextRequest) {
     let trainingDraftCount = 0;
     let totalTrainingDemand = 0;
 
-    const unitList = allUnits.map(unit => {
-      const up = uploadMap.get(unit.id);
-      const tr = trainingMap.get(unit.id);
-
+    const unitList = sysMetrics.unitRows.map(({ unit, candidateUpload: up, trainingDemand: tr }) => {
       // Xử lý trạng thái Nộp file cán bộ
       let candidateStatus: 'CHƯA_UPLOAD' | 'GỬI_CHÍNH_THỨC' | 'HỢP_LỆ' | 'CÓ_LỖI' | 'MỞ_LẠI' = 'CHƯA_UPLOAD';
       if (up) {
         uploadedCount++;
-        totalCandidates += up.total_rows || 0;
-        validCandidates += up.valid_rows || 0;
-        errorCandidates += up.error_rows || 0;
+        totalCandidates += up.totalRows || 0;
+        validCandidates += up.validRows || 0;
+        errorCandidates += up.errorRows || 0;
 
         if (up.status === 'OFFICIAL_SUBMITTED') {
           candidateStatus = 'GỬI_CHÍNH_THỨC';
@@ -169,7 +95,7 @@ export async function GET(req: NextRequest) {
         } else if (up.status === 'REOPENED') {
           candidateStatus = 'MỞ_LẠI';
           completedCount++; // 1.4: Bản chính thức trước đó vẫn là bản hiệu lực, không tụt về Chưa nộp
-        } else if (up.error_rows === 0 && up.valid_rows > 0) {
+        } else if (up.errorRows === 0 && up.validRows > 0) {
           candidateStatus = 'HỢP_LỆ';
         } else {
           candidateStatus = 'CÓ_LỖI';
@@ -180,7 +106,7 @@ export async function GET(req: NextRequest) {
       // Xử lý trạng thái Nhu cầu đào tạo
       let trainingStatus: 'CHƯA_KÊ_KHAI' | 'ĐANG_SOẠN' | 'ĐÃ_GỬI_CHÍNH_THỨC' | 'MỞ_LẠI' = 'CHƯA_KÊ_KHAI';
       if (tr) {
-        totalTrainingDemand += tr.total_training_participants || 0;
+        totalTrainingDemand += tr.totalParticipantsCombined || 0;
         if (tr.status === 'SUBMITTED') {
           trainingStatus = 'ĐÃ_GỬI_CHÍNH_THỨC';
           trainingSubmittedCount++;
@@ -232,15 +158,15 @@ export async function GET(req: NextRequest) {
       let candidateStatusLabel = 'Chưa nộp file';
       if (candidateStatus === 'GỬI_CHÍNH_THỨC') candidateStatusLabel = 'Đã gửi chính thức';
       else if (candidateStatus === 'HỢP_LỆ') candidateStatusLabel = 'Hợp lệ (chưa gửi)';
-      else if (candidateStatus === 'CÓ_LỖI') candidateStatusLabel = `Có ${up?.error_rows || 0} lỗi`;
+      else if (candidateStatus === 'CÓ_LỖI') candidateStatusLabel = `Có ${up?.errorRows || 0} lỗi`;
 
       let trainingStatusLabel = 'Chưa kê khai';
       if (trainingStatus === 'ĐÃ_GỬI_CHÍNH_THỨC') trainingStatusLabel = 'Đã gửi chính thức';
       else if (trainingStatus === 'ĐANG_SOẠN') trainingStatusLabel = 'Đang soạn';
       else if (trainingStatus === 'MỞ_LẠI') trainingStatusLabel = 'Mở lại bổ sung';
 
-      const candidateSubmittedAt = up?.status === 'OFFICIAL_SUBMITTED' ? (up?.submitted_at || up?.created_at || null) : null;
-      const trainingSubmittedAt = tr?.status === 'SUBMITTED' ? (tr?.submitted_at || tr?.updated_at || null) : null;
+      const candidateSubmittedAt = up?.status === 'OFFICIAL_SUBMITTED' ? (up?.submittedAt || up?.createdAt || null) : null;
+      const trainingSubmittedAt = tr?.status === 'SUBMITTED' ? (tr?.submittedAt || tr?.updatedAt || null) : null;
 
       return {
         unitId: unit.id,
@@ -251,25 +177,30 @@ export async function GET(req: NextRequest) {
         region: unit.region || 'MIEN_BAC',
         parentUnitId: unit.parent_unit_id || null,
         // Thông tin File Cán bộ
-        uploadId: up?.id || null,
+        uploadId: up?.uploadId || null,
         version: up?.version || null,
-        fileName: up?.file_name || null,
-        totalRows: up?.total_rows || 0,
-        validRows: up?.valid_rows || 0,
-        errorRows: up?.error_rows || 0,
+        fileName: up?.fileName || null,
+        totalRows: up?.totalRows || 0,
+        validRows: up?.validRows || 0,
+        errorRows: up?.errorRows || 0,
+        warningRows: up?.warningRows || 0,
         candidateStatus,
         candidateStatusLabel,
         candidateSubmittedAt,
-        // Thông tin Khảo sát Đào tạo
-        trainingSubmissionId: tr?.id || null,
-        trainingProgramsCount: tr?.program_count || 0,
-        trainingParticipantsCount: tr?.total_training_participants || 0,
+        // Thông tin Khảo sát Đào tạo (Tách riêng Mẫu 04, 05, 06)
+        trainingSubmissionId: tr?.submissionId || null,
+        trainingProgramsCount: (tr?.m04TopicsCount || 0) + (tr?.m05TopicsCount || 0),
+        trainingParticipantsCount: tr?.totalParticipantsCombined || 0,
+        m04Participants: tr?.m04Participants || 0,
+        m04Completed: tr?.m04Completed || 0,
+        m05Participants: tr?.m05Participants || 0,
+        m06Participants: tr?.m06Participants || 0,
         trainingStatus,
         trainingStatusLabel,
         trainingSubmittedAt,
         // Trạng thái chung
         overallStatus,
-        lastUpdated: up?.submitted_at || up?.created_at || tr?.submitted_at || tr?.updated_at || null
+        lastUpdated: up?.submittedAt || up?.createdAt || tr?.submittedAt || tr?.updatedAt || null
       };
     });
 
@@ -311,6 +242,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 6. Thống kê theo Form
+    const activeCollectionId = selectedCollection?.id || null;
     const collectionForms = activeCollectionId ? db.prepare(`
       SELECT f.id, f.form_code, f.title, f.validation_mode, f.input_method
       FROM forms f
@@ -339,6 +271,10 @@ export async function GET(req: NextRequest) {
         trainingNotSubmittedCount: Math.max(0, allUnits.length - trainingSubmittedCount - trainingReopenedCount - trainingDraftCount),
         trainingPendingCount: Math.max(0, allUnits.length - trainingSubmittedCount),
         totalTrainingDemand,
+        m04TotalParticipants: sysMetrics.trainingMetrics.m04TotalParticipants,
+        m04TotalCompleted: sysMetrics.trainingMetrics.m04TotalCompleted,
+        m05TotalParticipants: sysMetrics.trainingMetrics.m05TotalParticipants,
+        m06TotalParticipants: sysMetrics.trainingMetrics.m06TotalParticipants,
         masterEmployeesCount: totalMasterCount
       },
       regionSummary,

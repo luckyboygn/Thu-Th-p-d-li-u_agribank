@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { calculateSubmissionParticipantsDetailed } from './aggregation';
 
 export interface TrainingProgramSummaryItem {
   programName: string;
@@ -36,43 +37,7 @@ export interface ReceiptInfo {
  */
 export function calculateTrainingDemandParticipants(db: DatabaseSync, submissionId: number): number {
   if (!submissionId) return 0;
-
-  // 1. Từ Khung chương trình đào tạo (Nguồn chính hiện tại)
-  let progTotal = 0;
-  try {
-    const progRow = db.prepare(`
-      SELECT COALESCE(SUM(dt.participant_count), 0) as total
-      FROM training_demand_program_topics dt
-      JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
-      WHERE dp.submission_id = ?
-    `).get(submissionId) as any;
-    progTotal = Number(progRow?.total || 0);
-  } catch (e) {}
-
-  // 2. Từ Đề xuất đào tạo ngoài khung (Mục 2.8)
-  let propTotal = 0;
-  try {
-    const propRow = db.prepare(`
-      SELECT COALESCE(SUM(participant_count), 0) as total
-      FROM training_demand_proposals
-      WHERE submission_id = ?
-    `).get(submissionId) as any;
-    propTotal = Number(propRow?.total || 0);
-  } catch (e) {}
-
-  // 3. Từ Vị trí chức danh (Bản ghi cũ nếu có)
-  let posTotal = 0;
-  try {
-    const posRow = db.prepare(`
-      SELECT COALESCE(SUM(t.participant_count), 0) as total
-      FROM training_demand_topics t
-      JOIN training_demand_positions p ON t.demand_position_id = p.id
-      WHERE p.submission_id = ?
-    `).get(submissionId) as any;
-    posTotal = Number(posRow?.total || 0);
-  } catch (e) {}
-
-  return progTotal + propTotal + posTotal;
+  return calculateSubmissionParticipantsDetailed(db, submissionId).totalParticipants;
 }
 
 /**
@@ -84,18 +49,34 @@ export function getTrainingDemandProgramsSummary(
 ): TrainingProgramSummaryItem[] {
   if (!submissionId) return [];
   try {
-    const rows = db.prepare(`
-      SELECT p.name as program_name, p.code as program_code, p.group_name,
-             COALESCE(SUM(dt.participant_count), 0) as participants,
-             COALESCE(SUM(dt.completed_count), 0) as completed_count,
-             COUNT(CASE WHEN dt.participant_count > 0 THEN 1 END) as topic_count
-      FROM training_demand_programs dp
-      JOIN training_programs p ON dp.program_id = p.id
-      LEFT JOIN training_demand_program_topics dt ON dt.demand_program_id = dp.id
-      WHERE dp.submission_id = ?
-      GROUP BY p.id
-      ORDER BY p.id ASC
-    `).all(submissionId) as any[];
+    let rows: any[] = [];
+    try {
+      rows = db.prepare(`
+        SELECT p.name as program_name, p.code as program_code, p.group_name,
+               COALESCE(SUM(dt.participant_count), 0) as participants,
+               COALESCE(SUM(dt.completed_count), 0) as completed_count,
+               COUNT(CASE WHEN dt.participant_count > 0 THEN 1 END) as topic_count
+        FROM training_demand_programs dp
+        JOIN training_programs p ON dp.program_id = p.id
+        LEFT JOIN training_demand_program_topics dt ON dt.demand_program_id = dp.id
+        WHERE dp.submission_id = ?
+        GROUP BY p.id
+        ORDER BY p.id ASC
+      `).all(submissionId) as any[];
+    } catch {
+      rows = db.prepare(`
+        SELECT p.name as program_name, p.code as program_code, p.group_name,
+               COALESCE(SUM(dt.participant_count), 0) as participants,
+               0 as completed_count,
+               COUNT(CASE WHEN dt.participant_count > 0 THEN 1 END) as topic_count
+        FROM training_demand_programs dp
+        JOIN training_programs p ON dp.program_id = p.id
+        LEFT JOIN training_demand_program_topics dt ON dt.demand_program_id = dp.id
+        WHERE dp.submission_id = ?
+        GROUP BY p.id
+        ORDER BY p.id ASC
+      `).all(submissionId) as any[];
+    }
 
     return rows.map(r => ({
       programName: r.program_name || '',
