@@ -4,6 +4,7 @@ import { getSessionFromRequest, enforcePasswordPolicy, isCentralAdmin } from '@/
 import { logAudit } from '@/lib/audit';
 import { isWindowOpen } from '@/lib/deadline';
 import { triggerCloudSync } from '@/lib/cloud-sync';
+import { parseStrictNonNegativeInt, validateProposal } from '@/lib/training-validation';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -437,8 +438,8 @@ export async function POST(req: NextRequest) {
         const { programId, topicCounts } = programData;
         if (Array.isArray(topicCounts)) {
           for (const tc of topicCounts) {
-            const cNum = Number(tc.count);
-            if (isNaN(cNum) || !Number.isInteger(cNum) || cNum < 0) {
+            const numRes = parseStrictNonNegativeInt(tc.count);
+            if (numRes.error) {
               return NextResponse.json({ 
                 error: `Số lượng đăng ký của chuyên đề không hợp lệ (${tc.count}). Phải là số nguyên không âm (>= 0).` 
               }, { status: 400 });
@@ -518,8 +519,8 @@ export async function POST(req: NextRequest) {
       // Validation từng topic count: phải là số nguyên >= 0
       if (Array.isArray(topicCounts)) {
         for (const tc of topicCounts) {
-          const cNum = Number(tc.count);
-          if (isNaN(cNum) || !Number.isInteger(cNum) || cNum < 0) {
+          const numRes = parseStrictNonNegativeInt(tc.count);
+          if (numRes.error) {
             return NextResponse.json({ 
               error: `Số lượng đăng ký của chuyên đề không hợp lệ (${tc.count}). Phải là số nguyên không âm (>= 0).` 
             }, { status: 400 });
@@ -618,17 +619,23 @@ export async function POST(req: NextRequest) {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
-        for (const p of proposals) {
+        for (let idx = 0; idx < proposals.length; idx++) {
+          const p = proposals[idx];
           if (p.proposal_name && p.proposal_name.trim()) {
+            const vRes = validateProposal(p, idx + 1);
+            if (!vRes.isValid) {
+              db.exec('ROLLBACK;');
+              return NextResponse.json({ error: vRes.error }, { status: 400 });
+            }
             insertStmt.run(
               submission.id,
-              p.proposal_name.trim(),
-              p.target_audience ? p.target_audience.trim() : null,
-              Math.max(1, parseInt(p.participant_count) || 1),
-              p.expected_duration ? p.expected_duration.trim() : null,
-              p.delivery_method ? p.delivery_method.trim() : null,
-              p.faculty_source ? p.faculty_source.trim() : null,
-              p.notes ? p.notes.trim() : null
+              vRes.cleanProposal.proposal_name,
+              vRes.cleanProposal.target_audience || null,
+              vRes.cleanProposal.participant_count,
+              vRes.cleanProposal.expected_duration || null,
+              vRes.cleanProposal.delivery_method || null,
+              vRes.cleanProposal.faculty_source || null,
+              vRes.cleanProposal.notes || null
             );
           }
         }

@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     // 1. Lấy toàn bộ 818 chuyên đề KHUNG CHỨC DANH (Phụ lục I, II, III, IV - Mẫu số 04)
     const inFrameworkTopics = db.prepare(`
-      SELECT p.code as program_code, p.name as program_name,
+      SELECT t.id as topic_id, p.code as program_code, p.name as program_name,
              t.position_code, t.topic_name, t.delivery_method, t.duration,
              t.learning_path, t.competency, t.certificate_requirement,
              t.cert_planning_higher, t.cert_appoint_higher, t.cert_reappoint
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 
     // 2. Lấy toàn bộ 26 chương trình NGOÀI KHUNG BAN HÀNH (Mẫu số 05)
     const outFrameworkTopics = db.prepare(`
-      SELECT p.code as program_code, p.name as program_name,
+      SELECT t.id as topic_id, p.code as program_code, p.name as program_name,
              t.topic_name, t.target_audience, t.expected_content,
              t.duration, t.delivery_method, t.instructor, t.target_goal, t.proposal_basis
       FROM training_program_topics t
@@ -62,6 +62,7 @@ export async function GET(req: NextRequest) {
     // ==========================================
     const dataSheet1 = inFrameworkTopics.map((t, idx) => ({
       'STT': idx + 1,
+      'Mã Chuyên Đề': `CD_${t.topic_id}`,
       'Mã Khung CT': t.program_code,
       'Khung Chương Trình Đào Tạo': t.program_name,
       'Vị Trí Chức Danh': t.position_code || '',
@@ -81,6 +82,7 @@ export async function GET(req: NextRequest) {
     const ws1 = xlsx.utils.json_to_sheet(dataSheet1);
     ws1['!cols'] = [
       { wch: 6 },  // STT
+      { wch: 14 }, // Mã Chuyên Đề
       { wch: 14 }, // Mã Khung CT
       { wch: 42 }, // Khung Chương Trình Đào Tạo
       { wch: 20 }, // Vị Trí Chức Danh
@@ -103,6 +105,7 @@ export async function GET(req: NextRequest) {
     // ==========================================
     const dataSheet2 = outFrameworkTopics.map((t, idx) => ({
       'TT': idx + 1,
+      'Mã Chuyên Đề': `CD_${t.topic_id}`,
       'Nhóm chương trình': t.program_name,
       'Tên chương trình': t.topic_name,
       'Đối tượng': t.target_audience || '',
@@ -118,6 +121,7 @@ export async function GET(req: NextRequest) {
     const ws2 = xlsx.utils.json_to_sheet(dataSheet2);
     ws2['!cols'] = [
       { wch: 6 },  // TT
+      { wch: 14 }, // Mã Chuyên Đề
       { wch: 35 }, // Nhóm chương trình
       { wch: 45 }, // Tên chương trình
       { wch: 38 }, // Đối tượng
@@ -291,9 +295,18 @@ export async function POST(req: NextRequest) {
 
     const parseRes = parseTrainingDemandExcel(workbook, allOfficialPrograms, allOfficialTopics);
 
+    // Kiểm tra nếu file có lỗi dữ liệu nghiêm trọng ở chế độ execute
+    if (mode === 'execute' && parseRes.errors && parseRes.errors.length > 0) {
+      return NextResponse.json({
+        error: `File Excel chứa ${parseRes.errors.length} lỗi dữ liệu không hợp lệ. Vui lòng chỉnh sửa trước khi nạp:`,
+        details: parseRes.errors
+      }, { status: 400 });
+    }
+
     if (parseRes.grandTotalParticipants <= 0 && (parseRes.totalCompletedParticipants || 0) <= 0) {
       return NextResponse.json({
-        error: 'Không tìm thấy số lượng học viên hợp lệ (> 0) trong file Excel. Vui lòng kiểm tra lại file đã nhập số lượng tại cột [Đăng ký học năm 2027] hoặc [Đã học] chưa.'
+        error: 'Không tìm thấy số lượng học viên hợp lệ (> 0) trong file Excel. Vui lòng kiểm tra lại file đã nhập số lượng tại cột [Đăng ký học năm 2027] hoặc [Đã học] chưa.',
+        details: parseRes.errors.length > 0 ? parseRes.errors : undefined
       }, { status: 400 });
     }
 
@@ -320,22 +333,34 @@ export async function POST(req: NextRequest) {
         proposalsCount: parseRes.proposalsList.length,
         proposalParticipants: parseRes.totalProposalParticipants,
         grandTotalParticipants: parseRes.grandTotalParticipants,
+        unmatchedCount: parseRes.unmatchedRows.length,
+        unmatchedRows: parseRes.unmatchedRows,
+        errorsCount: parseRes.errors.length,
+        errors: parseRes.errors,
+        fileTotalParticipants: parseRes.fileTotalParticipants,
+        comparisonWithFileTotal: parseRes.comparisonWithFileTotal,
         programs: parseRes.programsSummary,
         proposals: parseRes.proposalsList,
-        warnings: parseRes.warnings.slice(0, 5)
+        warnings: parseRes.warnings
       });
     }
 
-    // 2. Chế độ EXECUTE: Thực hiện lưu và cấp Biên nhận
+    // 2. Chế độ EXECUTE: Kiểm tra bảo vệ không cho import đè lên bản SUBMITTED trừ khi REOPENED
+    let submission = db.prepare(`
+      SELECT * FROM training_demand_submissions
+      WHERE collection_id = ? AND unit_id = ?
+      ORDER BY version DESC LIMIT 1
+    `).get(collectionId, unitId) as any;
+
+    if (submission && submission.status === 'SUBMITTED') {
+      return NextResponse.json({
+        error: `Đơn vị "${unit.unit_name}" đã nộp bản kê khai chính thức (SUBMITTED) vào lúc ${submission.submitted_at || ''}. Hệ thống không cho phép import đè. Vui lòng mở lại (REOPEN) đợt kê khai của đơn vị trước khi có thể nạp lại file Excel.`
+      }, { status: 403 });
+    }
+
+    // Thực hiện lưu và cấp Biên nhận
     db.exec('BEGIN TRANSACTION;');
     try {
-      // Tìm hoặc tạo submission
-      let submission = db.prepare(`
-        SELECT * FROM training_demand_submissions
-        WHERE collection_id = ? AND unit_id = ?
-        ORDER BY version DESC LIMIT 1
-      `).get(collectionId, unitId) as any;
-
       if (!submission) {
         const insSub = db.prepare(`
           INSERT INTO training_demand_submissions (

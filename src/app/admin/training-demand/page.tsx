@@ -3238,27 +3238,78 @@ export default function AdminTrainingDemandPage() {
                     </span>
                   </div>
 
-                  {/* 4 Thẻ KPI tóm tắt */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                  {/* Thẻ KPI tóm tắt */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                     <div className="bg-white p-2 rounded-lg border border-emerald-200 shadow-2xs">
                       <div className="text-[10px] text-slate-500 font-semibold uppercase">Khung CT</div>
                       <div className="text-base font-extrabold text-[#005F3E]">{proxyPreviewData.programsCount}</div>
                     </div>
                     <div className="bg-white p-2 rounded-lg border border-emerald-200 shadow-2xs">
-                      <div className="text-[10px] text-slate-500 font-semibold uppercase">Chuyên đề</div>
-                      <div className="text-base font-extrabold text-blue-700">{proxyPreviewData.topicsCount}</div>
+                      <div className="text-[10px] text-slate-500 font-semibold uppercase">Khớp chuẩn</div>
+                      <div className="text-base font-extrabold text-blue-700">{proxyPreviewData.topicsCount} CĐ</div>
                     </div>
-                    <div className="bg-white p-2 rounded-lg border border-emerald-200 shadow-2xs">
-                      <div className="text-[10px] text-slate-500 font-semibold uppercase">Ngoài khung</div>
-                      <div className="text-base font-extrabold text-amber-700">{proxyPreviewData.proposalsCount}</div>
+                    <div className="bg-white p-2 rounded-lg border border-amber-200 shadow-2xs">
+                      <div className="text-[10px] text-amber-700 font-semibold uppercase">Không khớp</div>
+                      <div className={`text-base font-extrabold ${proxyPreviewData.unmatchedCount > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {proxyPreviewData.unmatchedCount || 0} dòng
+                      </div>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-red-200 shadow-2xs">
+                      <div className="text-[10px] text-red-600 font-semibold uppercase">Lỗi ô số</div>
+                      <div className={`text-base font-extrabold ${proxyPreviewData.errorsCount > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                        {proxyPreviewData.errorsCount || 0} ô
+                      </div>
                     </div>
                     <div className="bg-white p-2 rounded-lg border border-emerald-300 shadow-2xs bg-emerald-50">
-                      <div className="text-[10px] text-emerald-800 font-bold uppercase">Tổng Lượt Học Viên</div>
+                      <div className="text-[10px] text-emerald-800 font-bold uppercase">Tổng Người Học</div>
                       <div className="text-lg font-black text-[#A81D22]">
                         {Number(proxyPreviewData.grandTotalParticipants || 0).toLocaleString('vi-VN')}
                       </div>
                     </div>
                   </div>
+
+                  {/* Đối chiếu dòng Tổng cộng trong file nếu có */}
+                  {proxyPreviewData.comparisonWithFileTotal && (
+                    <div className={`p-2 rounded-lg text-[11px] font-medium border flex items-center justify-between ${
+                      proxyPreviewData.comparisonWithFileTotal.match
+                        ? 'bg-emerald-100/60 border-emerald-300 text-emerald-900'
+                        : 'bg-amber-100/70 border-amber-300 text-amber-900 font-bold'
+                    }`}>
+                      <span>
+                        {proxyPreviewData.comparisonWithFileTotal.match
+                          ? '✓ Tổng số người khớp chính xác với dòng "Tổng cộng" trong file Excel'
+                          : `⚠ Lệch tổng cộng: Tính từ các dòng = ${proxyPreviewData.comparisonWithFileTotal.calculatedSum} người vs Dòng "Tổng cộng" trong file = ${proxyPreviewData.comparisonWithFileTotal.reportedInFile} người`}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Danh sách lỗi dữ liệu (nếu có) */}
+                  {proxyPreviewData.errors && proxyPreviewData.errors.length > 0 && (
+                    <div className="text-[11px] text-red-800 bg-red-50 p-2.5 rounded-lg border border-red-300 space-y-1 max-h-28 overflow-y-auto">
+                      <div className="font-bold flex items-center gap-1 text-red-900">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                        <span>Phát hiện {proxyPreviewData.errors.length} lỗi định dạng số liệu (Cần sửa file trước khi nộp):</span>
+                      </div>
+                      {proxyPreviewData.errors.map((errStr: string, i: number) => (
+                        <div key={i} className="pl-4 text-[10.5px]">• {errStr}</div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Danh sách dòng không khớp chuẩn (nếu có) */}
+                  {proxyPreviewData.unmatchedRows && proxyPreviewData.unmatchedRows.length > 0 && (
+                    <div className="text-[11px] text-amber-900 bg-amber-50 p-2.5 rounded-lg border border-amber-300 space-y-1 max-h-28 overflow-y-auto">
+                      <div className="font-bold flex items-center gap-1 text-amber-800">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Có {proxyPreviewData.unmatchedRows.length} dòng không nhận diện được chuyên đề (sẽ không nạp):</span>
+                      </div>
+                      {proxyPreviewData.unmatchedRows.map((u: any, i: number) => (
+                        <div key={i} className="pl-4 text-[10.5px]">
+                          • Dòng {u.rowNumber} ({u.sheetName}): "{u.rawTopicName}" {u.rawTopicCode ? `[Mã: ${u.rawTopicCode}]` : ''} - SL: {u.rawCount || 0}
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Danh sách chương trình bóc tách được */}
                   {proxyPreviewData.programs && proxyPreviewData.programs.length > 0 && (
@@ -3276,10 +3327,10 @@ export default function AdminTrainingDemandPage() {
                     </div>
                   )}
 
-                  {/* Cảnh báo nếu có */}
+                  {/* Cảnh báo khác nếu có */}
                   {proxyPreviewData.warnings && proxyPreviewData.warnings.length > 0 && (
-                    <div className="text-[10px] text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 space-y-0.5">
-                      {proxyPreviewData.warnings.map((w: string, i: number) => (
+                    <div className="text-[10px] text-amber-800 bg-amber-50 p-2 rounded border border-amber-200 space-y-0.5 max-h-20 overflow-y-auto">
+                      {proxyPreviewData.warnings.slice(0, 5).map((w: string, i: number) => (
                         <div key={i} className="flex items-center gap-1">
                           <span>⚠️</span>
                           <span>{w}</span>
@@ -3305,7 +3356,7 @@ export default function AdminTrainingDemandPage() {
               <button
                 type="button"
                 onClick={handleExecuteProxyUpload}
-                disabled={proxyUploading || !proxyFile || !proxyUnitId}
+                disabled={proxyUploading || !proxyFile || !proxyUnitId || Boolean(proxyPreviewData?.errorsCount && proxyPreviewData.errorsCount > 0)}
                 className="px-5 py-2.5 bg-[#005F3E] hover:bg-[#004d32] text-white rounded-xl text-xs font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
               >
                 {proxyUploading ? (

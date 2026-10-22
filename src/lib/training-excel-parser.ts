@@ -1,5 +1,6 @@
 import * as xlsx from 'xlsx';
 import { normalizeText } from './unit-matcher';
+import { parseStrictNonNegativeInt, validateProposal } from './training-validation';
 
 export interface ParsedTopicData {
   count: number;
@@ -24,6 +25,15 @@ export interface ParsedProposal {
   notes?: string;
 }
 
+export interface UnmatchedRowInfo {
+  rowNumber: number;
+  sheetName: string;
+  rawTopicCode?: string;
+  rawTopicName: string;
+  rawCount?: any;
+  reason: string;
+}
+
 export interface ParseExcelResult {
   programsDataMap: Map<number, ParsedProgramData>;
   proposalsList: ParsedProposal[];
@@ -43,6 +53,14 @@ export interface ParseExcelResult {
   totalProposalParticipants: number;
   grandTotalParticipants: number;
   warnings: string[];
+  errors: string[];
+  unmatchedRows: UnmatchedRowInfo[];
+  fileTotalParticipants?: number;
+  comparisonWithFileTotal?: {
+    reportedInFile: number;
+    calculatedSum: number;
+    match: boolean;
+  };
 }
 
 export function parseTrainingDemandExcel(
@@ -55,7 +73,7 @@ export function parseTrainingDemandExcel(
       const { getDatabase } = require('./db');
       const db = getDatabase();
       if (!allOfficialPrograms) {
-        allOfficialPrograms = db.prepare('SELECT id, code, name, category_type FROM training_programs').all() as any[];
+        allOfficialPrograms = db.prepare('SELECT id, code, name, category_type, group_name FROM training_programs').all() as any[];
       }
       if (!allOfficialTopics) {
         allOfficialTopics = db.prepare(`
@@ -73,9 +91,20 @@ export function parseTrainingDemandExcel(
     }
   }
 
-  // Bản đồ tra cứu theo tên chuẩn hóa
+  // 1. Bản đồ tra cứu theo Mã Chuyên Đề (CD_1, CD1, 1, TOPIC_1...)
+  const topicMapByCode = new Map<string, any>();
+  // 2. Bản đồ tra cứu theo tên chuẩn hóa
   const topicMapByName = new Map<string, any[]>();
+
   for (const t of allOfficialTopics!) {
+    const idStr = String(t.id);
+    topicMapByCode.set(`CD_${idStr}`.toUpperCase(), t);
+    topicMapByCode.set(`CD${idStr}`.toUpperCase(), t);
+    topicMapByCode.set(idStr, t);
+    if (t.code) {
+      topicMapByCode.set(String(t.code).trim().toUpperCase(), t);
+    }
+
     const nName = normalizeText(t.topic_name);
     if (!topicMapByName.has(nName)) topicMapByName.set(nName, []);
     topicMapByName.get(nName)!.push(t);
@@ -84,13 +113,16 @@ export function parseTrainingDemandExcel(
   const programMapByCode = new Map<string, any>();
   const programMapByName = new Map<string, any>();
   for (const p of allOfficialPrograms!) {
-    programMapByCode.set(p.code.toUpperCase().trim(), p);
-    programMapByName.set(normalizeText(p.name), p);
+    if (p.code) programMapByCode.set(p.code.toUpperCase().trim(), p);
+    if (p.name) programMapByName.set(normalizeText(p.name), p);
   }
 
   const programsDataMap = new Map<number, ParsedProgramData>();
   const proposalsList: ParsedProposal[] = [];
   const warnings: string[] = [];
+  const errors: string[] = [];
+  const unmatchedRows: UnmatchedRowInfo[] = [];
+  let fileTotalParticipants: number | undefined = undefined;
   let totalRowsProcessed = 0;
 
   for (const sheetName of workbook.SheetNames) {
@@ -110,19 +142,57 @@ export function parseTrainingDemandExcel(
       continue;
     }
 
-    // Tự động giải phóng các ô gộp (merged cells) để dữ liệu không bị khuyết thiếu trên từng dòng
-    // Tối ưu: Gán trực tiếp tham chiếu originCell, giới hạn phạm vi an toàn để tránh OOM bộ nhớ khi người dùng merge cả triệu dòng
+    // Nhận diện Sheet Đề xuất ngoài khung (Mẫu số 06 hoặc sheet đề xuất riêng)
+    const isMau05 = normSheet.includes('mau 05') || normSheet.includes('mau_05');
+    const isProposalSheet = !isMau05 && (
+      normSheet.includes('mau 06') ||
+      normSheet.includes('mau_06') ||
+      (normSheet.includes('de xuat') && !normSheet.includes('05')) ||
+      normSheet.includes('proposal')
+    );
+
+    // Quét tìm các cột số lượng trong sheet trước khi unmerge
+    // Cột số lượng: KHÔNG nhân bản giá trị xuống các ô dưới khi bị merge (tránh nhân ba, nhân bốn số lượng)
+    const quantityCols = new Set<number>();
+    const sheetRange = ws['!ref'] ? xlsx.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 100, c: 20 } };
+    const scanMaxR = Math.min(sheetRange.e.r, 20);
+
+    for (let r = 0; r <= scanMaxR; r++) {
+      for (let c = 0; c <= Math.min(sheetRange.e.c, 30); c++) {
+        const cell = ws[xlsx.utils.encode_cell({ r, c })];
+        if (cell && cell.v !== undefined && cell.v !== null) {
+          const nCell = normalizeText(String(cell.v));
+          if (
+            (nCell.includes('dang ky') ||
+             nCell.includes('so luong') ||
+             nCell === 'sl' ||
+             nCell.includes('da hoc') ||
+             nCell.includes('hoc vien')) &&
+            !nCell.includes('ho ten') &&
+            !nCell.includes('danh sach')
+          ) {
+            quantityCols.add(c);
+          }
+        }
+      }
+    }
+
+    // Xử lý các ô gộp (merged cells):
+    // Chỉ nhân bản giá trị cho cột phân loại/tiêu đề, TUYỆT ĐỐI KHÔNG nhân bản cho cột số lượng
     if (ws['!merges']) {
-      const range = ws['!ref'] ? xlsx.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 2500, c: 20 } };
-      const maxR = Math.min(range.e.r, 2500);
+      const maxR = Math.min(sheetRange.e.r, 2500);
       for (const m of ws['!merges']) {
         if (m.s.r > maxR) continue;
         if (m.e.r - m.s.r > 200) continue; // Bỏ qua merge bất thường bao trọn cả cột
         const endR = Math.min(m.e.r, maxR);
-        const originCell = ws[xlsx.utils.encode_cell(m.s)];
-        if (!originCell || originCell.v === undefined || originCell.v === null || originCell.v === '') continue;
-        for (let r = m.s.r; r <= endR; r++) {
-          for (let c = m.s.c; c <= Math.min(m.e.c, 15); c++) {
+        for (let c = m.s.c; c <= Math.min(m.e.c, 25); c++) {
+          // Nếu là cột số lượng: Chỉ ô đầu tiên giữ giá trị, không copy xuống dưới!
+          if (quantityCols.has(c)) {
+            continue;
+          }
+          const originCell = ws[xlsx.utils.encode_cell({ r: m.s.r, c })];
+          if (!originCell || originCell.v === undefined || originCell.v === null || originCell.v === '') continue;
+          for (let r = m.s.r + 1; r <= endR; r++) {
             const addr = xlsx.utils.encode_cell({ r, c });
             if (!ws[addr] || ws[addr].v === undefined || ws[addr].v === null || ws[addr].v === '') {
               ws[addr] = originCell;
@@ -132,22 +202,18 @@ export function parseTrainingDemandExcel(
       }
     }
 
-    // Nhận diện Sheet Đề xuất ngoài khung (Mẫu số 06 hoặc sheet đề xuất tự do)
-    // Lưu ý: Không tính 'ngoai khung' đơn thuần vì Mẫu số 05 (Mau_05_Ngoai_Khung) là 26 chuyên đề chuẩn đã có trong CSDL
-    const isMau05 = normSheet.includes('mau 05') || normSheet.includes('mau_05');
-    const isProposalSheet = !isMau05 && (normSheet.includes('mau 06') || normSheet.includes('mau_06') || (normSheet.includes('de xuat') && !normSheet.includes('05')) || normSheet.includes('proposal'));
-
     if (isProposalSheet) {
-      // Sheet Đề xuất ngoài khung (Mẫu số 06 dành cho TSC, VPĐD, ĐVSN hoặc đề xuất riêng của đơn vị)
+      // Sheet Đề xuất ngoài khung (Mẫu số 06 dành cho TSC, VPĐD, ĐVSN hoặc đề xuất riêng)
       const rows: any[] = xlsx.utils.sheet_to_json(ws, { defval: '' });
-      for (const row of rows) {
+      for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+        const row = rows[rowIdx];
         totalRowsProcessed++;
         let propName = '';
         let audience = '';
         let duration = '';
         let deliveryMethod = '';
         let facultySource = '';
-        let count = 0;
+        let rawCount: any = '';
         let note = '';
 
         for (const key of Object.keys(row)) {
@@ -163,33 +229,45 @@ export function parseTrainingDemandExcel(
             deliveryMethod = String(val).trim();
           } else if (normKey.includes('giang vien') || normKey.includes('nguon') || normKey.includes('cau hoi')) {
             facultySource = String(val).trim();
-          } else if (normKey.includes('so luong') || normKey.includes('dang ky') || normKey.includes('nguoi')) {
-            const cNum = parseInt(String(val).replace(/[^0-9]/g, ''));
-            if (!isNaN(cNum) && cNum > 0) count = cNum;
+          } else if (normKey.includes('so luong') || normKey.includes('dang ky') || normKey.includes('nguoi') || normKey === 'sl') {
+            rawCount = val;
           } else if (normKey.includes('ghi chu') || normKey.includes('kien nghi')) {
             note = String(val).trim();
           }
         }
 
-        if (propName && (count > 0 || duration || audience)) {
-          proposalsList.push({
-            proposal_name: propName,
-            target_audience: audience,
-            expected_duration: duration,
-            delivery_method: deliveryMethod,
-            faculty_source: facultySource,
-            participant_count: count > 0 ? count : 1,
-            notes: note
-          });
+        // Bỏ qua dòng rỗng hoàn toàn hoặc dòng hướng dẫn/ví dụ nếu chưa có tên
+        if (!propName) continue;
+
+        // Bỏ qua dòng ví dụ mẫu mặc định nếu không có người
+        if (propName.startsWith('Ví dụ:') && !rawCount) continue;
+
+        // Validate đề xuất bằng hàm dùng chung validateProposal
+        const propToValidate = {
+          proposal_name: propName,
+          target_audience: audience,
+          expected_duration: duration,
+          delivery_method: deliveryMethod,
+          faculty_source: facultySource,
+          participant_count: rawCount,
+          notes: note
+        };
+
+        const vRes = validateProposal(propToValidate, rowIdx + 2);
+        if (!vRes.isValid) {
+          errors.push(`Sheet "${sheetName}" (Dòng ${rowIdx + 2}): ${vRes.error}`);
+        } else {
+          proposalsList.push(vRes.cleanProposal);
         }
       }
     } else {
-      // Sheet Khảo sát nhu cầu đào tạo (Hỗ trợ cả dạng ma trận nhiều block stacked chuẩn Agribank lẫn bảng phẳng)
+      // Sheet Khảo sát nhu cầu đào tạo (Mẫu 04 Khung chức danh và Mẫu 05 Ngoài khung)
       const matrix = xlsx.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][];
       if (!matrix || matrix.length === 0) continue;
 
       let currentProgramId: number | null = null;
       let colMap: {
+        topicCodeIdx?: number;
         topicIdx?: number;
         positionIdx?: number;
         completedIdx?: number;
@@ -209,8 +287,11 @@ export function parseTrainingDemandExcel(
         const rowStr = row.map(c => String(c || '').trim()).filter(Boolean).join(' ');
         if (!rowStr) continue;
 
-        // 1. Kiểm tra dòng Header của bảng (chứa 'Tên chuyên đề', 'Chuyên đề đào tạo' hoặc 'Tên chương trình' - Mẫu 05)
-        const isHeaderRow = row.some(cell => {
+        const cell0 = String(row[0] || '').trim();
+        const isNumericStt = !isNaN(Number(cell0)) && Number(cell0) > 0;
+
+        // 1. Kiểm tra dòng Header của bảng (CHỈ KHI cell0 không phải là số thứ tự dòng dữ liệu)
+        const isHeaderRow = !isNumericStt && row.some(cell => {
           const nCell = normalizeText(String(cell));
           return (
             nCell.includes('ten chuyen de') ||
@@ -227,6 +308,14 @@ export function parseTrainingDemandExcel(
           row.forEach((cell, idx) => {
             const nCell = normalizeText(String(cell));
             if (
+              nCell.includes('ma chuyen de') ||
+              nCell.includes('ma cd') ||
+              nCell === 'ma' ||
+              nCell === 'topic_code' ||
+              nCell === 'code'
+            ) {
+              colMap!.topicCodeIdx = idx;
+            } else if (
               (nCell.includes('ten chuyen de') ||
                nCell === 'chuyen de' ||
                nCell.includes('chuyen de dao tao') ||
@@ -273,10 +362,6 @@ export function parseTrainingDemandExcel(
         }
 
         // 2. Kiểm tra dòng Tiêu đề Khung chương trình / Phụ lục / Nhóm chương trình La Mã (Mẫu số 05)
-        const cell0 = String(row[0] || '').trim();
-        const cell1 = String(row[1] || '').trim();
-        const isNumericStt = !isNaN(Number(cell0)) && Number(cell0) > 0;
-
         if (!isNumericStt) {
           const firstCells = row.slice(0, 3).map(c => String(c || '').trim()).join(' ');
           const upperFirst = firstCells.toUpperCase();
@@ -310,7 +395,6 @@ export function parseTrainingDemandExcel(
 
           if (matchedProg) {
             currentProgramId = matchedProg.id;
-            // Không xóa colMap nếu Mẫu số 05 dùng 1 header chung ở đầu bảng
             continue;
           }
         }
@@ -322,7 +406,7 @@ export function parseTrainingDemandExcel(
 
           const nRaw = normalizeText(rawTopicName);
 
-          // Bỏ qua dòng tổng kết hoặc chú thích
+          // Bỏ qua dòng tổng kết hoặc chú thích, đồng thời trích xuất dòng Tổng cộng nếu có
           if (
             nRaw.startsWith('tong thoi gian') ||
             nRaw.startsWith('tong cong') ||
@@ -332,21 +416,43 @@ export function parseTrainingDemandExcel(
             nRaw.startsWith('chu thich') ||
             rawTopicName.startsWith('(*)')
           ) {
+            if (nRaw.startsWith('tong cong') || nRaw.startsWith('tong so') || nRaw === 'tong') {
+              if (colMap.countIdx !== undefined && row[colMap.countIdx] !== undefined) {
+                const totalCellAddr = xlsx.utils.encode_cell({ r: rIdx, c: colMap.countIdx });
+                const parsedTotal = parseStrictNonNegativeInt(row[colMap.countIdx], totalCellAddr);
+                if (!parsedTotal.error && parsedTotal.value > 0) {
+                  fileTotalParticipants = parsedTotal.value;
+                }
+              }
+            }
             continue;
           }
 
-          // Lấy số lượng học viên đăng ký
+          // Lấy mã chuyên đề (nếu file có cột mã)
+          const rawTopicCode = colMap.topicCodeIdx !== undefined ? String(row[colMap.topicCodeIdx] || '').trim() : '';
+
+          // Lấy số lượng học viên đăng ký - kiểm tra nghiêm ngặt
           let count = 0;
           if (colMap.countIdx !== undefined && row[colMap.countIdx] !== undefined) {
-            const parsed = parseInt(String(row[colMap.countIdx]).replace(/[^0-9]/g, ''));
-            if (!isNaN(parsed) && parsed > 0) count = parsed;
+            const cellAddr = xlsx.utils.encode_cell({ r: rIdx, c: colMap.countIdx });
+            const numRes = parseStrictNonNegativeInt(row[colMap.countIdx], cellAddr);
+            if (numRes.error) {
+              errors.push(`Sheet "${sheetName}" (Dòng ${rIdx + 1}): ${numRes.error}`);
+            } else {
+              count = numRes.value;
+            }
           }
 
-          // Lấy số lượng đã học (nếu có trong file)
+          // Lấy số lượng đã học (nếu có trong file) - kiểm tra nghiêm ngặt
           let completedCount = 0;
           if (colMap.completedIdx !== undefined && row[colMap.completedIdx] !== undefined) {
-            const parsedComp = parseInt(String(row[colMap.completedIdx]).replace(/[^0-9]/g, ''));
-            if (!isNaN(parsedComp) && parsedComp > 0) completedCount = parsedComp;
+            const cellAddr = xlsx.utils.encode_cell({ r: rIdx, c: colMap.completedIdx });
+            const compRes = parseStrictNonNegativeInt(row[colMap.completedIdx], cellAddr);
+            if (compRes.error) {
+              errors.push(`Sheet "${sheetName}" (Dòng ${rIdx + 1}): ${compRes.error}`);
+            } else {
+              completedCount = compRes.value;
+            }
           }
 
           // Bỏ qua chuyên đề không có nhu cầu (> 0) và chưa học (> 0)
@@ -369,26 +475,37 @@ export function parseTrainingDemandExcel(
             }
           }
 
-          // Khớp chuyên đề với CSDL chuẩn
-          const matchedList = topicMapByName.get(nRaw);
+          // Khớp chuyên đề với CSDL chuẩn:
+          // Bước 1: Ưu tiên khớp theo Mã Chuyên Đề nếu có cột mã
           let matchedTopic: any = null;
+          if (rawTopicCode) {
+            const cleanCode = rawTopicCode.toUpperCase().trim();
+            matchedTopic = topicMapByCode.get(cleanCode);
+            if (!matchedTopic && cleanCode.startsWith('#')) {
+              matchedTopic = topicMapByCode.get(cleanCode.substring(1).trim());
+            }
+          }
 
-          if (matchedList && matchedList.length > 0) {
-            if (matchedList.length === 1) {
-              matchedTopic = matchedList[0];
-            } else {
-              // Có nhiều chuyên đề trùng tên -> phân biệt bằng program_id và position_code
-              if (rowProgId && normPos) {
-                matchedTopic = matchedList.find(t => t.program_id === rowProgId && normalizeText(t.position_code) === normPos);
-              }
-              if (!matchedTopic && rowProgId) {
-                matchedTopic = matchedList.find(t => t.program_id === rowProgId);
-              }
-              if (!matchedTopic && normPos) {
-                matchedTopic = matchedList.find(t => normalizeText(t.position_code) === normPos);
-              }
-              if (!matchedTopic) {
+          // Bước 2: Fallback khớp theo Tên chuyên đề chuẩn hóa (bỏ dấu)
+          if (!matchedTopic) {
+            const matchedList = topicMapByName.get(nRaw);
+            if (matchedList && matchedList.length > 0) {
+              if (matchedList.length === 1) {
                 matchedTopic = matchedList[0];
+              } else {
+                // Có nhiều chuyên đề trùng tên -> phân biệt bằng program_id và position_code
+                if (rowProgId && normPos) {
+                  matchedTopic = matchedList.find(t => t.program_id === rowProgId && normalizeText(t.position_code) === normPos);
+                }
+                if (!matchedTopic && rowProgId) {
+                  matchedTopic = matchedList.find(t => t.program_id === rowProgId);
+                }
+                if (!matchedTopic && normPos) {
+                  matchedTopic = matchedList.find(t => normalizeText(t.position_code) === normPos);
+                }
+                if (!matchedTopic) {
+                  matchedTopic = matchedList[0];
+                }
               }
             }
           }
@@ -411,16 +528,16 @@ export function parseTrainingDemandExcel(
               notes: rowNote
             });
           } else {
-            const aud = colMap.audienceIdx !== undefined ? String(row[colMap.audienceIdx] || '').trim() : '';
-            const dur = colMap.durationIdx !== undefined ? String(row[colMap.durationIdx] || '').trim() : '';
-            proposalsList.push({
-              proposal_name: rawTopicName,
-              target_audience: aud || 'Theo nhu cầu đơn vị',
-              expected_duration: dur || '1-2 ngày',
-              participant_count: count,
-              notes: [rowNote, attendees ? `Họ tên: ${attendees}` : ''].filter(Boolean).join(' | ') || 'Nhận diện tự động từ file Excel'
+            // Không khớp: TUYỆT ĐỐI KHÔNG âm thầm ghi nhận vào proposalsList hay bỏ qua ngầm!
+            unmatchedRows.push({
+              rowNumber: rIdx + 1,
+              sheetName,
+              rawTopicCode: rawTopicCode || undefined,
+              rawTopicName,
+              rawCount: row[colMap.countIdx],
+              reason: 'Chuyên đề không khớp với bất kỳ chuyên đề nào trong danh mục chuẩn'
             });
-            warnings.push(`Chuyên đề "${rawTopicName}" không có trong khung chuẩn -> Tự động ghi nhận vào Đề xuất ngoài khung.`);
+            warnings.push(`Dòng ${rIdx + 1} (${sheetName}): Không nhận diện được chuyên đề "${rawTopicName}"${rawTopicCode ? ` [Mã: ${rawTopicCode}]` : ''}.`);
           }
         }
       }
@@ -457,6 +574,20 @@ export function parseTrainingDemandExcel(
   const totalProposalParticipants = proposalsList.reduce((sum, p) => sum + p.participant_count, 0);
   const grandTotalParticipants = totalInFrameworkParticipants + totalProposalParticipants;
 
+  // So sánh tổng số người với dòng "Tổng cộng" trong file Excel (nếu có)
+  let comparisonWithFileTotal: { reportedInFile: number; calculatedSum: number; match: boolean } | undefined = undefined;
+  if (fileTotalParticipants !== undefined && fileTotalParticipants > 0) {
+    const isMatch = (fileTotalParticipants === totalInFrameworkParticipants);
+    comparisonWithFileTotal = {
+      reportedInFile: fileTotalParticipants,
+      calculatedSum: totalInFrameworkParticipants,
+      match: isMatch
+    };
+    if (!isMatch) {
+      warnings.push(`CẢNH BÁO LỆCH SỐ LIỆU: Tổng số người đăng ký tính từ các chuyên đề (${totalInFrameworkParticipants}) lệch so với dòng 'Tổng cộng' trong file Excel (${fileTotalParticipants}).`);
+    }
+  }
+
   return {
     programsDataMap,
     proposalsList,
@@ -467,6 +598,10 @@ export function parseTrainingDemandExcel(
     totalCompletedParticipants,
     totalProposalParticipants,
     grandTotalParticipants,
-    warnings
+    warnings,
+    errors,
+    unmatchedRows,
+    fileTotalParticipants,
+    comparisonWithFileTotal
   };
 }
