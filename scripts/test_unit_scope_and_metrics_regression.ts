@@ -164,13 +164,13 @@ function assert(condition: boolean, testName: string, detail?: string) {
 
   const participating = getParticipatingUnits(scopeDb);
   assert(
-    participating.length === 3,
-    'Test 4.1: getParticipatingUnits chỉ lấy 3 đơn vị ACTIVE thuộc BRANCH_L1 và BRANCH_L2',
+    participating.length === 5,
+    'Test 4.1: getParticipatingUnits lấy đúng 5 đơn vị ACTIVE (gồm cả chi nhánh và trụ sở theo quyết định nghiệp vụ)',
     `Thực tế: ${participating.length}`
   );
   assert(
-    !participating.some(u => u.unit_type === 'HO' || u.status === 'INACTIVE'),
-    'Test 4.2: Loại bỏ hoàn toàn Trụ sở (HO) và đơn vị INACTIVE khỏi mẫu số tiến độ'
+    !participating.some(u => u.status === 'INACTIVE'),
+    'Test 4.2: Loại bỏ hoàn toàn đơn vị INACTIVE khỏi mẫu số tiến độ'
   );
 }
 

@@ -14,27 +14,23 @@ export function normalizeUnitCode(raw: any): string {
 }
 
 /**
- * Tập các loại đơn vị tham gia nộp bài / khảo sát thực tế
- * Mặc định: Chi nhánh Loại 1 (BRANCH_L1) và Chi nhánh Loại 2 (BRANCH_L2)
- * Loại trừ: Trụ sở chính / Các ban Hội sở (HO), Công ty con ngoài ngành (SUBSIDIARY)
+ * Tập các loại đơn vị tham gia nộp bài / khảo sát thực tế (Theo quyết định nghiệp vụ: Bao gồm toàn bộ các loại đơn vị)
  */
-export const PARTICIPATING_UNIT_TYPES: readonly string[] = ['BRANCH_L1', 'BRANCH_L2'] as const;
+export const PARTICIPATING_UNIT_TYPES: readonly string[] = ['BRANCH_L1', 'BRANCH_L2', 'HO', 'SUBSIDIARY'] as const;
 
 /**
- * Điều kiện SQL lọc các đơn vị tham gia khảo sát / nộp file
+ * Điều kiện SQL lọc các đơn vị tham gia khảo sát / nộp file (Đảm bảo lọc đơn vị đang hoạt động ACTIVE)
  */
-export const PARTICIPATING_UNITS_SQL_CONDITION = `
-  status = 'ACTIVE' AND unit_type IN ('BRANCH_L1', 'BRANCH_L2')
-`;
+export const PARTICIPATING_UNITS_SQL_CONDITION = `status = 'ACTIVE'`;
 
 /**
- * Lấy danh sách các đơn vị hợp lệ tham gia tính mẫu số tiến độ
+ * Lấy danh sách các đơn vị hợp lệ tham gia tính mẫu số tiến độ (Toàn bộ các đơn vị ACTIVE trong hệ thống)
  */
 export function getParticipatingUnits(db: DatabaseSync): any[] {
   return db.prepare(`
     SELECT id, unit_code, unit_name, user_account, status, unit_type, region, parent_unit_id
     FROM units
-    WHERE status = 'ACTIVE' AND unit_type IN ('BRANCH_L1', 'BRANCH_L2')
+    WHERE status = 'ACTIVE'
     ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC
   `).all() as any[];
 }
