@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
-import { normalizeEmployeeCode, normalizeElearning, normalizeFullName } from '@/lib/normalization';
+import { normalizeEmployeeCode, normalizeElearning, normalizeFullName, normalizeUnitCode } from '@/lib/normalization';
 import * as xlsx from 'xlsx';
 
 export async function POST(req: NextRequest) {
@@ -43,7 +43,11 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Kiểm tra tính toàn vẹn 1-1 trong file
+    const db = getDatabase();
+    const validUnitRows = db.prepare('SELECT unit_code FROM units').all() as any[];
+    const validUnitCodes = new Set(validUnitRows.map(u => normalizeUnitCode(u.unit_code)));
+
+    // Kiểm tra tính toàn vẹn 1-1 trong file và khóa ngoại tham chiếu đơn vị
     const seenCodes = new Map<string, string>();
     const seenElearns = new Map<string, string>();
     const qualityErrors: string[] = [];
@@ -54,9 +58,13 @@ export async function POST(req: NextRequest) {
       const code = normalizeEmployeeCode(r[codeKey]);
       const elearn = normalizeElearning(r[elearnKey]);
       const name = nameKey ? normalizeFullName(r[nameKey]) : '';
-      const unit = unitKey ? String(r[unitKey] || '').trim() : '';
+      const unit = unitKey ? normalizeUnitCode(r[unitKey]) : '';
 
       if (!code || !elearn) return;
+
+      if (unit && !validUnitCodes.has(unit)) {
+        qualityErrors.push(`Dòng ${idx + 2}: Mã đơn vị [${unit}] của cán bộ ${code} không tồn tại trong danh mục Đơn vị.`);
+      }
 
       if (seenCodes.has(code) && seenCodes.get(code) !== elearn) {
         qualityErrors.push(`Dòng ${idx + 2}: Mã cán bộ ${code} được gán cho nhiều tài khoản eLearning khác nhau (${seenCodes.get(code)} và ${elearn}).`);
@@ -72,13 +80,11 @@ export async function POST(req: NextRequest) {
 
     if (qualityErrors.length > 0) {
       return NextResponse.json({
-        error: 'File vi phạm nguyên tắc quan hệ 1-1 giữa Mã cán bộ và Tài khoản eLearning!',
+        error: 'File vi phạm nguyên tắc quan hệ 1-1 hoặc chứa mã đơn vị không hợp lệ!',
         qualityErrors: qualityErrors.slice(0, 20),
         totalErrors: qualityErrors.length
       }, { status: 422 });
     }
-
-    const db = getDatabase();
 
     // Chuẩn bị statement
     const existingEmployees = db.prepare('SELECT id, employee_code, elearning_account, full_name, unit_code, unit_name, status FROM employees').all() as any[];

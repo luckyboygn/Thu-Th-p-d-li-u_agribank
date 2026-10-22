@@ -6,6 +6,7 @@ import {
   normalizeNameForComparison, 
   stripLeadingZeros 
 } from './normalization';
+import { isUnitInScope, UnitScopeMode } from './units';
 
 export interface ValidationErrorItem {
   rowIndex: number;
@@ -76,11 +77,15 @@ export function validateCandidateBatch(
 
   const targetUnitCode = currentUnitCode ? String(currentUnitCode).trim() : '';
 
-  // Đọc cấu hình inactive_employee_severity từ system_settings
+  // Đọc cấu hình inactive_employee_severity & unit_scope_mode từ system_settings
   let inactiveSeverity: 'ERROR' | 'WARNING' = 'WARNING';
+  let unitScopeMode: UnitScopeMode = 'EXACT_ONLY';
   try {
     const setting = db.prepare('SELECT value FROM system_settings WHERE key = ?').get('inactive_employee_severity') as any;
     if (setting?.value === 'ERROR') inactiveSeverity = 'ERROR';
+
+    const scopeSetting = db.prepare('SELECT value FROM system_settings WHERE key = ?').get('unit_scope_mode') as any;
+    if (scopeSetting?.value === 'INCLUDE_SUBSIDIARIES') unitScopeMode = 'INCLUDE_SUBSIDIARIES';
   } catch (e) {}
 
   // ==========================================
@@ -319,17 +324,20 @@ export function validateCandidateBatch(
           }
 
           // Kiểm tra xem cán bộ có thuộc đơn vị đang kê khai không (dạng WARNING)
-          if (targetUnitCode && recordByCode.unit_code && String(recordByCode.unit_code).trim() !== targetUnitCode) {
-            const unitDisplay = recordByCode.unit_name || `Mã ĐV: ${recordByCode.unit_code}`;
-            rowErrors.push({
-              rowIndex: r.rowIndex,
-              employeeCode: code,
-              elearningAccount: elearn,
-              errorType: 'UNIT_MISMATCH',
-              errorMessage: `Cảnh báo: Cán bộ thuộc đơn vị khác trong hệ thống (Đơn vị trong CSDL: ${unitDisplay}).`,
-              severity: 'WARNING',
-              sheetName: r.sheetName
-            });
+          if (targetUnitCode && recordByCode.unit_code) {
+            const inScope = isUnitInScope(db, targetUnitCode, recordByCode.unit_code, unitScopeMode);
+            if (!inScope) {
+              const unitDisplay = recordByCode.unit_name || `Mã ĐV: ${recordByCode.unit_code}`;
+              rowErrors.push({
+                rowIndex: r.rowIndex,
+                employeeCode: code,
+                elearningAccount: elearn,
+                errorType: 'UNIT_MISMATCH',
+                errorMessage: `Cảnh báo: Cán bộ thuộc đơn vị khác trong hệ thống (Đơn vị trong CSDL: ${unitDisplay}).`,
+                severity: 'WARNING',
+                sheetName: r.sheetName
+              });
+            }
           }
         } else {
           // CASE 4: Cả hai đều tồn tại nhưng thuộc 2 người khác nhau!

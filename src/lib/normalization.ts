@@ -56,6 +56,19 @@ export function normalizeEmployeeCode(raw: any): string {
 }
 
 /**
+ * Chuẩn hóa Mã đơn vị (unit_code):
+ * - NFC Unicode, bỏ ký tự ẩn, chuyển full-width sang half-width, trim, UPPERCASE
+ */
+export function normalizeUnitCode(raw: any): string {
+  if (raw === null || raw === undefined) return '';
+  let str = String(raw).normalize('NFC');
+  str = fullWidthToHalfWidth(str);
+  str = removeInvisibleCharacters(str);
+  str = normalizeSpaces(str);
+  return str.trim().toUpperCase();
+}
+
+/**
  * Loại bỏ các số 0 ở đầu chuỗi mã cán bộ (nếu có)
  * Ví dụ: "0200733604" -> "200733604", "00123" -> "123", "0" -> "0"
  */

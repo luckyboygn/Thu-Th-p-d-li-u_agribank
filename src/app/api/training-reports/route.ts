@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
+import { getParticipatingUnits, PARTICIPATING_UNITS_SQL_CONDITION } from '@/lib/units';
 import * as xlsx from 'xlsx';
 
 export const dynamic = 'force-dynamic';
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
 
   // 1. BÁO CÁO TỔNG HỢP TOÀN HỆ THỐNG (SUMMARY METRICS)
   if (type === 'SUMMARY') {
-    const totalUnitsCount = (db.prepare('SELECT COUNT(*) as c FROM units').get() as any).c;
+    const totalUnitsCount = (db.prepare(`SELECT COUNT(*) as c FROM units WHERE ${PARTICIPATING_UNITS_SQL_CONDITION}`).get() as any).c;
 
     const submittedCount = (db.prepare(`
       SELECT COUNT(DISTINCT unit_id) as c 
@@ -256,7 +257,7 @@ export async function GET(req: NextRequest) {
     if (!unitIdStr) return NextResponse.json({ error: 'Thiếu unitId.' }, { status: 400 });
 
     if (unitIdStr === 'ALL') {
-      const allUnits = db.prepare('SELECT id, unit_code, unit_name, region, unit_type FROM units ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC').all() as any[];
+      const allUnits = getParticipatingUnits(db);
       const submissions = db.prepare(`
         SELECT ts.id, ts.unit_id, ts.status, ts.submitted_at, ts.updated_at,
                (SELECT COUNT(DISTINCT dp.program_id) FROM training_demand_programs dp WHERE dp.submission_id = ts.id) as program_count,

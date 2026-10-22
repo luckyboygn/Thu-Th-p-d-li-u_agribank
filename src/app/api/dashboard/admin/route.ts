@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
+import { getParticipatingUnits } from '@/lib/units';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -98,8 +99,8 @@ export async function GET(req: NextRequest) {
     }
     const selectedExam = activeExamId ? (exams.find(e => e.id === activeExamId) || null) : null;
 
-    // 2. Lấy toàn bộ Đơn vị kèm thông tin phân cấp & vùng miền
-    const allUnits = db.prepare('SELECT id, unit_code, unit_name, user_account, status, unit_type, region, parent_unit_id FROM units ORDER BY CAST(unit_code AS INTEGER) ASC, unit_code ASC').all() as any[];
+    // 2. Lấy danh mục Đơn vị tham gia khảo sát/nộp file chuẩn hóa (ACTIVE & đúng loại đơn vị)
+    const allUnits = getParticipatingUnits(db);
 
     // 3. Lấy dữ liệu Nộp file Cán bộ / Kỳ thi (exam_uploads)
     const latestUploads = activeExamId ? db.prepare(`
