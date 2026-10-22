@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import {
   Database,
   Search,
@@ -21,7 +22,8 @@ import {
   UserCheck,
   UserX,
   Settings,
-  Clock
+  Clock,
+  UserPlus
 } from 'lucide-react';
 
 interface MasterEmployee {
@@ -276,6 +278,16 @@ export default function AdminMasterDbPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Nút Đề nghị bổ sung CB từ Đơn vị */}
+          <Link
+            href="/admin/employee-requests"
+            className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border border-slate-300 shadow-xs transition-colors"
+            title="Xem và xét duyệt các đề nghị bổ sung cán bộ gửi từ Đơn vị"
+          >
+            <UserPlus className="w-4 h-4 text-emerald-700" />
+            Đề Nghị Từ Đơn Vị
+          </Link>
+
           {/* Nút Tải file mẫu */}
           <a
             href="/api/export?type=master-template"

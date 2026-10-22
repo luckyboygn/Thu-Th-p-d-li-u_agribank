@@ -21,7 +21,8 @@ import {
   Eye,
   Users,
   HardDrive,
-  UserPlus
+  UserPlus,
+  Building2
 } from 'lucide-react';
 import ChangePasswordModal from '@/components/ChangePasswordModal';
 import NotificationBell from '@/components/NotificationBell';
@@ -123,13 +124,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       hasChevron: true,
     },
     {
-      title: 'Quản lý biểu mẫu (Forms)',
-      href: '/admin/forms',
-      icon: LayoutGrid,
-      exact: false,
-      hasChevron: true,
-    },
-    {
       title: 'Khảo sát nhu cầu đào tạo',
       href: '/admin/training-demand',
       icon: GraduationCap,
@@ -137,9 +131,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       hasChevron: true,
     },
     {
+      title: 'Quản lý đơn vị',
+      href: '/admin/units',
+      icon: Building2,
+      badge: '203',
+      exact: false,
+      hasChevron: false,
+    },
+    {
       title: 'Quản lý tài khoản',
       href: '/admin/users',
       icon: Users,
+      badge: '205',
       exact: false,
       hasChevron: false,
     },
@@ -148,13 +151,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       href: '/admin/master-db',
       icon: Database,
       badge: masterDbCount ? String(masterDbCount) : '244',
-      exact: false,
-      hasChevron: false,
-    },
-    {
-      title: 'Đề nghị bổ sung CB',
-      href: '/admin/employee-requests',
-      icon: UserPlus,
       exact: false,
       hasChevron: false,
     },

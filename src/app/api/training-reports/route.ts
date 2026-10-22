@@ -24,8 +24,29 @@ export async function GET(req: NextRequest) {
 
   let collectionId = collectionIdStr ? parseInt(collectionIdStr) : null;
   if (!collectionId) {
-    const activeColl = db.prepare("SELECT id FROM collections WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
-    collectionId = activeColl?.id || 1;
+    // Đồng bộ tuyệt đối với Dashboard Admin: Ưu tiên đợt OPEN có bài nộp, sau đó đợt có bài nộp, sau đó đợt OPEN mới nhất
+    const openWithSubs = db.prepare(`
+      SELECT c.id FROM collections c
+      WHERE c.status = 'OPEN' AND c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
+      ORDER BY c.id DESC LIMIT 1
+    `).get() as any;
+
+    if (openWithSubs?.id) {
+      collectionId = openWithSubs.id;
+    } else {
+      const anyWithSubs = db.prepare(`
+        SELECT c.id FROM collections c
+        WHERE c.id IN (SELECT DISTINCT collection_id FROM training_demand_submissions)
+        ORDER BY c.id DESC LIMIT 1
+      `).get() as any;
+
+      if (anyWithSubs?.id) {
+        collectionId = anyWithSubs.id;
+      } else {
+        const activeColl = db.prepare("SELECT id FROM collections WHERE status = 'OPEN' ORDER BY id DESC LIMIT 1").get() as any;
+        collectionId = activeColl?.id || 1;
+      }
+    }
   }
 
   // 1. BÁO CÁO TỔNG HỢP TOÀN HỆ THỐNG (SUMMARY METRICS)
