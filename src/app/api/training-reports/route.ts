@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getSessionFromRequest } from '@/lib/auth';
 import { getParticipatingUnits, PARTICIPATING_UNITS_SQL_CONDITION } from '@/lib/units';
-import { resolveActiveCollection, getTrainingDemandMetricsByUnit, calculateSubmissionParticipantsDetailed } from '@/lib/aggregation';
+import { resolveActiveCollection, getTrainingDemandMetricsByUnit, calculateSubmissionParticipantsDetailed, getTopicDemandReport } from '@/lib/aggregation';
 import * as xlsx from 'xlsx';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   const collectionIdStr = searchParams.get('collectionId');
   const programIdStr = searchParams.get('programId');
   const positionIdStr = searchParams.get('positionId');
+  const topicIdStr = searchParams.get('topicId');
   const unitIdStr = searchParams.get('unitId');
 
   const db = getDatabase();
@@ -217,6 +218,25 @@ export async function GET(req: NextRequest) {
       topicTotals,
       totalParticipantsInPosition: Object.values(topicTotals).reduce((a, b) => a + b, 0)
     });
+  }
+
+
+  // 3.5. BÁO CÁO THEO CHUYÊN ĐỀ (BY_TOPIC)
+  if (type === 'BY_TOPIC') {
+    if (!topicIdStr) {
+      return NextResponse.json({ error: 'Cần chọn topicId để xem báo cáo theo chuyên đề.' }, { status: 400 });
+    }
+    const topicId = parseInt(topicIdStr, 10);
+    if (isNaN(topicId)) {
+      return NextResponse.json({ error: 'topicId không hợp lệ.' }, { status: 400 });
+    }
+
+    const report = getTopicDemandReport(db, topicId, collectionId);
+    if (!report) {
+      return NextResponse.json({ error: 'Không tìm thấy chuyên đề đào tạo.' }, { status: 404 });
+    }
+
+    return NextResponse.json(report);
   }
 
   // 4. BÁO CÁO THEO TỪNG ĐƠN VỊ (HỖ TRỢ CẢ "TẤT CẢ ĐƠN VỊ" VÀ "TỪNG ĐƠN VỊ")
@@ -423,6 +443,65 @@ export async function GET(req: NextRequest) {
       return new NextResponse(buf, {
         headers: {
           'Content-Disposition': `attachment; filename="Bao_Cao_Nhu_Cau_${prog?.code || progId}.xlsx"`,
+          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+      });
+    }
+
+
+    // FORMAT A2: THEO CHUYÊN ĐỀ
+    if (exportFormat === 'BY_TOPIC' && topicIdStr) {
+      const topicId = parseInt(topicIdStr, 10);
+      if (isNaN(topicId)) {
+        return NextResponse.json({ error: 'topicId không hợp lệ.' }, { status: 400 });
+      }
+
+      const report = getTopicDemandReport(db, topicId, collectionId);
+      if (!report) {
+        return NextResponse.json({ error: 'Không tìm thấy chuyên đề đào tạo.' }, { status: 404 });
+      }
+
+      const rows = report.unitDemands.map((r, idx) => ({
+        'STT': idx + 1,
+        'Mã đơn vị': r.unit_code,
+        'Tên đơn vị': r.unit_name,
+        'Vị trí chức danh': `[${r.position_code}] ${r.position_name}`,
+        'Hình thức đào tạo': report.topic.delivery_method || 'Trực tiếp',
+        'Thời lượng đào tạo': report.topic.duration || '02 ngày',
+        'Số lượng người đăng ký': r.participant_count,
+        'Đã học': r.completed_count || 0,
+        'Thời gian nộp': r.submitted_at || ''
+      }));
+
+      const ws = xlsx.utils.json_to_sheet(rows.length > 0 ? rows : [{
+        'STT': '',
+        'Mã đơn vị': '',
+        'Tên đơn vị': 'Chưa có đơn vị nào đăng ký',
+        'Vị trí chức danh': '',
+        'Hình thức đào tạo': report.topic.delivery_method || '',
+        'Thời lượng đào tạo': report.topic.duration || '',
+        'Số lượng người đăng ký': 0,
+        'Đã học': 0,
+        'Thời gian nộp': ''
+      }]);
+
+      xlsx.utils.book_append_sheet(wb, ws, 'Nhu_Cau_Chuyen_De');
+      const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+      const asciiName = (report.topic.name || `Topic_${topicId}`)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/_+/g, '_')
+        .substring(0, 50);
+
+      const encodedFilename = encodeURIComponent(`Nhu_Cau_${report.topic.name || `Topic_${topicId}`}.xlsx`);
+
+      return new NextResponse(buf, {
+        headers: {
+          'Content-Disposition': `attachment; filename="Nhu_Cau_${asciiName}.xlsx"; filename*=UTF-8''${encodedFilename}`,
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         }
       });
