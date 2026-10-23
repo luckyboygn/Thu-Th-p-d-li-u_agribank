@@ -554,3 +554,178 @@ export function getSystemDashboardMetrics(
     unitRows
   };
 }
+
+
+export interface TopicDemandReport {
+  topic: {
+    id: number;
+    name: string;
+    delivery_method: string;
+    duration: string;
+  };
+  positionsCount: number;
+  positionsUsingTopic: Array<{
+    id: number;
+    code: string;
+    name: string;
+  }>;
+  totalDemand: number;
+  unitCount: number;
+  unitDemands: Array<{
+    unit_id: number;
+    unit_code: string;
+    unit_name: string;
+    region?: string;
+    position_code: string;
+    position_name: string;
+    participant_count: number;
+    completed_count?: number;
+    submitted_at?: string;
+  }>;
+}
+
+/**
+ * 8. getTopicDemandReport: Thống kê chi tiết nhu cầu đào tạo theo chuyên đề trên toàn hệ thống.
+ * Áp dụng Single Source of Truth cho Tab "Theo Chuyên đề" và tính năng Xuất Excel Chuyên đề.
+ */
+export function getTopicDemandReport(
+  db: any,
+  topicId: number,
+  collectionId?: number | null
+): TopicDemandReport | null {
+  // 1. Tìm thông tin chuyên đề (training_topics hoặc training_program_topics)
+  let topic = db.prepare('SELECT * FROM training_topics WHERE id = ?').get(topicId) as any;
+  if (!topic) {
+    const pt = db.prepare('SELECT id, topic_name as name, delivery_method, duration FROM training_program_topics WHERE id = ?').get(topicId) as any;
+    if (pt) {
+      topic = { id: pt.id, code: `TOPIC_${pt.id}`, name: pt.name, delivery_method: pt.delivery_method, duration: pt.duration };
+    }
+  }
+
+  if (!topic) return null;
+
+  const cleanName = (s: string) => (s || '').replace(/\r/g, '').replace(/\n/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const targetNameClean = cleanName(topic.name);
+
+  // 2. Tìm tất cả chuyên đề trong chương trình tương ứng
+  const allProgramTopics = db.prepare(`
+    SELECT tpt.id, tpt.program_id, tpt.topic_name, tpt.position_code, tpt.delivery_method, tpt.duration
+    FROM training_program_topics tpt
+  `).all() as any[];
+
+  const matchedProgTopics = allProgramTopics.filter(pt =>
+    pt.id === topic.id || cleanName(pt.topic_name) === targetNameClean
+  );
+  const matchedProgTopicIds = matchedProgTopics.map(pt => pt.id);
+
+  // 3. Vị trí / Chức danh áp dụng chuyên đề này
+  const posMap = new Map<string, { id: number; code: string; name: string }>();
+
+  try {
+    const fromPosTopics = db.prepare(`
+      SELECT p.id, p.code, p.name
+      FROM training_position_topics pt
+      JOIN training_positions p ON pt.position_id = p.id
+      WHERE pt.topic_id = ?
+      ORDER BY p.code ASC
+    `).all(topic.id) as any[];
+
+    fromPosTopics.forEach(p => {
+      posMap.set(p.code, { id: p.id, code: p.code, name: p.name });
+    });
+  } catch {}
+
+  for (const pt of matchedProgTopics) {
+    if (pt.position_code && !posMap.has(pt.position_code)) {
+      try {
+        const p = db.prepare('SELECT id, code, name FROM training_positions WHERE code = ?').get(pt.position_code) as any;
+        if (p) {
+          posMap.set(p.code, { id: p.id, code: p.code, name: p.name });
+        } else {
+          posMap.set(pt.position_code, { id: pt.id, code: pt.position_code, name: pt.position_code });
+        }
+      } catch {
+        posMap.set(pt.position_code, { id: pt.id, code: pt.position_code, name: pt.position_code });
+      }
+    }
+  }
+  const positionsUsingTopic = Array.from(posMap.values());
+
+  // 4. Chi tiết nhu cầu các đơn vị
+  let unitDemands: any[] = [];
+  if (collectionId && matchedProgTopicIds.length > 0) {
+    const placeholders = matchedProgTopicIds.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT ds.unit_id, u.unit_code, u.unit_name, u.region,
+             COALESCE(tpt.position_code, '') as position_code,
+             COALESCE(pos.name, prog.name, tpt.position_code, '') as position_name,
+             dt.participant_count,
+             COALESCE(dt.completed_count, 0) as completed_count,
+             ds.submitted_at
+      FROM training_demand_program_topics dt
+      JOIN training_demand_programs dp ON dt.demand_program_id = dp.id
+      JOIN training_demand_submissions ds ON dp.submission_id = ds.id
+      JOIN units u ON ds.unit_id = u.id
+      JOIN training_program_topics tpt ON dt.program_topic_id = tpt.id
+      LEFT JOIN training_positions pos ON tpt.position_code = pos.code
+      LEFT JOIN training_programs prog ON tpt.program_id = prog.id
+      WHERE ds.collection_id = ?
+        AND dt.program_topic_id IN (${placeholders})
+        AND dt.participant_count > 0
+        AND ds.id IN (
+          SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
+        )
+      ORDER BY CAST(u.unit_code AS INTEGER) ASC, u.unit_code ASC
+    `).all(collectionId, ...matchedProgTopicIds, collectionId) as any[];
+
+    unitDemands = rows;
+  }
+
+  // Fallback: hỗ trợ bảng cũ training_demand_topics nếu có
+  if (collectionId) {
+    try {
+      const legacyRows = db.prepare(`
+        SELECT ds.unit_id, u.unit_code, u.unit_name, u.region,
+               pos.code as position_code,
+               pos.name as position_name,
+               dt.participant_count,
+               0 as completed_count,
+               ds.submitted_at
+        FROM training_demand_topics dt
+        JOIN training_demand_positions dp ON dt.demand_position_id = dp.id
+        JOIN training_demand_submissions ds ON dp.submission_id = ds.id
+        JOIN units u ON ds.unit_id = u.id
+        JOIN training_positions pos ON dp.position_id = pos.id
+        WHERE ds.collection_id = ?
+          AND dt.topic_id = ?
+          AND dt.participant_count > 0
+          AND ds.id IN (
+            SELECT MAX(id) FROM training_demand_submissions WHERE collection_id = ? GROUP BY unit_id
+          )
+        ORDER BY CAST(u.unit_code AS INTEGER) ASC, u.unit_code ASC
+      `).all(collectionId, topic.id, collectionId) as any[];
+
+      if (legacyRows && legacyRows.length > 0) {
+        unitDemands = [...unitDemands, ...legacyRows];
+      }
+    } catch {}
+  }
+
+  const totalDemand = unitDemands.reduce((sum, r) => sum + (Number(r.participant_count) || 0), 0);
+  const uniqueUnits = new Set(unitDemands.map(r => r.unit_id));
+  const unitCount = uniqueUnits.size;
+
+  return {
+    topic: {
+      id: topic.id,
+      name: topic.name,
+      delivery_method: topic.delivery_method || 'Trực tiếp',
+      duration: topic.duration || '02 ngày'
+    },
+    positionsCount: positionsUsingTopic.length,
+    positionsUsingTopic,
+    totalDemand,
+    unitCount,
+    unitDemands
+  };
+}
